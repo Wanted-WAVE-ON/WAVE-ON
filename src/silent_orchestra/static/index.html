@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="SilentOrchestra 2.0 - 개인의 몸짓 언어를 학습하는 Spatial AI Agent" />
+  <title>SilentOrchestra 2.0</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="noise" aria-hidden="true"></div>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="SilentOrchestra 홈">
+      <span class="brand-mark"><i></i><i></i><i></i></span>
+      <span>
+        <strong>SilentOrchestra</strong>
+        <small>Personalized Spatial Agent</small>
+      </span>
+    </a>
+    <div class="top-actions">
+      <span class="privacy-badge"><span class="dot"></span> Local-first / Frame discarded</span>
+      <a class="ghost-button" href="/docs" target="_blank" rel="noreferrer">API Docs</a>
+      <button class="ghost-button danger" id="resetButton" type="button">Reset demo</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <aside class="column left-column">
+      <section class="panel context-panel">
+        <div class="panel-heading">
+          <div>
+            <span class="eyebrow">CURRENT CONTEXT</span>
+            <h2 id="contextTitle">Presentation</h2>
+          </div>
+          <span class="context-live"><i></i>ACTIVE</span>
+        </div>
+        <div class="context-app">
+          <span class="app-icon" id="appIcon">P</span>
+          <div>
+            <strong id="activeApp">PowerPoint</strong>
+            <small id="contextMeta">Meeting room / Laptop</small>
+          </div>
+        </div>
+        <div class="segmented" role="group" aria-label="상황 선택">
+          <button class="segment active" data-context="presentation" type="button">Presentation</button>
+          <button class="segment" data-context="music" type="button">Music</button>
+        </div>
+      </section>
+
+      <section class="panel interpretation-panel">
+        <span class="eyebrow">AGENT INTERPRETATION</span>
+        <div id="interpretationList" class="interpretation-list">
+          <div class="empty-mini">이 상황에서 학습된 몸짓이 아직 없습니다.</div>
+        </div>
+      </section>
+
+      <section class="panel privacy-panel">
+        <div class="privacy-title">
+          <span class="shield" aria-hidden="true">LOCK</span>
+          <div><span class="eyebrow">PRIVACY BY DESIGN</span><h3>카메라는 기억하지 않습니다</h3></div>
+        </div>
+        <div class="privacy-flow" aria-label="개인정보 보호 처리 흐름">
+          <span>Camera</span><b>-></b><span>Motion features</span><b>-></b><span>Frame discarded</span>
+        </div>
+        <ul class="check-list">
+          <li>Raw video storage <strong>OFF</strong></li>
+          <li>Face recognition <strong>OFF</strong></li>
+          <li>Cloud video upload <strong>OFF</strong></li>
+        </ul>
+      </section>
+    </aside>
+
+    <section class="center-stage">
+      <div class="agent-stage" id="agentStage">
+        <div class="ambient-ring ring-one"></div>
+        <div class="ambient-ring ring-two"></div>
+        <div class="ambient-ring ring-three"></div>
+        <div class="agent-orb" id="agentOrb">
+          <span class="orb-core"></span>
+          <span class="orb-sweep"></span>
+        </div>
+        <div class="agent-copy">
+          <span class="status-line"><i></i><span id="agentStatus">공간을 이해하는 중</span></span>
+          <h1 id="stageTitle">몸짓을 자연스럽게 사용해 보세요</h1>
+          <p id="stageDescription">별도의 제스처를 외울 필요가 없습니다. AI가 반복되는 행동과 맥락을 관찰합니다.</p>
+        </div>
+      </div>
+
+      <section class="gesture-console panel">
+        <div class="panel-heading compact">
+          <div>
+            <span class="eyebrow">MOTION INPUT</span>
+            <h3>몸짓 발생시키기</h3>
+          </div>
+          <span class="mode-pill">Stable simulation</span>
+        </div>
+        <div class="gesture-grid" id="gestureGrid">
+          <button class="gesture-button" data-motion="swipe" data-direction="right" data-label="오른쪽 손짓" type="button">
+            <span class="gesture-symbol">&gt;&gt;</span><span><strong>오른쪽 손짓</strong><small>Swipe right</small></span>
+          </button>
+          <button class="gesture-button" data-motion="swipe" data-direction="left" data-label="왼쪽 손짓" type="button">
+            <span class="gesture-symbol">&lt;&lt;</span><span><strong>왼쪽 손짓</strong><small>Swipe left</small></span>
+          </button>
+          <button class="gesture-button" data-motion="open_palm" data-direction="none" data-label="손바닥 펼치기" type="button">
+            <span class="gesture-symbol">[]</span><span><strong>손바닥 펼치기</strong><small>Open palm</small></span>
+          </button>
+          <button class="gesture-button" data-motion="circle" data-direction="clockwise" data-label="원형 움직임" type="button">
+            <span class="gesture-symbol">O</span><span><strong>원형 움직임</strong><small>Circle</small></span>
+          </button>
+        </div>
+      </section>
+
+      <section class="teaching-card panel" id="teachingCard" aria-live="polite">
+        <div class="teaching-state">
+          <span class="teaching-icon">AI</span>
+          <div>
+            <span class="eyebrow">OBSERVATION READY</span>
+            <h3 id="teachingTitle">먼저 몸짓을 발생시켜 주세요</h3>
+            <p id="teachingDescription">학습 전에는 아무 동작도 자동 실행하지 않습니다.</p>
+          </div>
+        </div>
+        <div class="action-buttons" id="actionButtons"></div>
+      </section>
+    </section>
+
+    <aside class="column right-column">
+      <section class="panel metrics-panel">
+        <div class="metric"><span>Observed</span><strong id="metricObservations">0</strong></div>
+        <div class="metric"><span>Learned</span><strong id="metricMemories">0</strong></div>
+        <div class="metric"><span>Pending</span><strong id="metricPending">0</strong></div>
+      </section>
+
+      <section class="panel suggestion-panel" id="suggestionPanel">
+        <div class="suggestion-glow"></div>
+        <div class="panel-heading compact">
+          <div><span class="eyebrow">AGENT SUGGESTION</span><h3>새로운 패턴</h3></div>
+          <span class="sparkle">NEW</span>
+        </div>
+        <div id="suggestionContent" class="suggestion-content">
+          <div class="empty-state">
+            <span>...</span>
+            <p>같은 몸짓과 후속 행동이 3회 반복되면 Agent가 기억을 제안합니다.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel memory-panel">
+        <div class="panel-heading compact">
+          <div><span class="eyebrow">MY LANGUAGE</span><h3>Personal Gesture Memory</h3></div>
+          <span class="count-badge" id="memoryCount">0</span>
+        </div>
+        <div id="memoryList" class="memory-list">
+          <div class="empty-state small"><p>아직 기억된 몸짓이 없습니다.</p></div>
+        </div>
+      </section>
+
+      <section class="panel event-panel">
+        <div class="panel-heading compact">
+          <div><span class="eyebrow">LEARNING LOG</span><h3>최근 이벤트</h3></div>
+        </div>
+        <div id="eventList" class="event-list">
+          <div class="empty-mini">이벤트를 기다리는 중입니다.</div>
+        </div>
+      </section>
+    </aside>
+  </main>
+
+  <div class="action-overlay" id="actionOverlay" role="status" aria-live="assertive">
+    <span class="overlay-gesture" id="overlayGesture">&gt;&gt;</span>
+    <strong id="overlayAction">다음 슬라이드</strong>
+    <small id="overlayConfidence">Learned gesture / 94%</small>
+    <div class="feedback-row" id="feedbackRow">
+      <button type="button" data-feedback="CORRECT">맞아요</button>
+      <button type="button" data-feedback="WRONG_ACTION">아니에요</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

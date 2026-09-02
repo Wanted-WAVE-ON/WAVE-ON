@@ -1,0 +1,43 @@
+digraph G {
+  graph [rankdir=TB, bgcolor="#FFFFFF", pad="0.35", nodesep="0.42", ranksep="0.55", splines=ortho, fontname="Noto Sans CJK KR", newrank=true];
+  node [shape=box, style="rounded,filled", fontname="Noto Sans CJK KR", fontsize=12, color="#D7DDEB", penwidth=1.2, fillcolor="#F8FAFF", fontcolor="#111827", margin="0.20,0.13", width=2.35];
+  edge [color="#7C8AA5", penwidth=1.4, arrowsize=0.7, fontname="Noto Sans CJK KR", fontsize=9, fontcolor="#59657B"];
+
+  input [label="Camera / Stable Simulation", fillcolor="#EEF9FF", color="#8BDDF4"];
+  feature [label="Motion Feature Extractor\nOptical Flow", fillcolor="#EEF9FF", color="#8BDDF4"];
+  discard [label="Raw frame 즉시 폐기", shape=note, fillcolor="#FFF4F6", color="#F3A9B9", fontcolor="#9C314D", width=2.0];
+  encoder [label="Gesture Encoder\nFeature vector", fillcolor="#F4F1FF", color="#B7A9FF"];
+  context [label="Context Engine\nActive app + Activity", fillcolor="#F4F1FF", color="#B7A9FF"];
+  observation [label="Observation Engine\nGesture + Context + History", fillcolor="#F4F1FF", color="#B7A9FF"];
+  pattern [label="Pattern Learning\n반복 행동 탐지", fillcolor="#F5FBF8", color="#96DDBD"];
+  suggestion [label="Agent Suggestion\n이 몸짓을 기억할까요?", fillcolor="#FFF9EC", color="#EACB7D"];
+  memory [label="Personal Gesture Memory\nUser + Gesture + Context = Intent", fillcolor="#F4F1FF", color="#9F8CFF", penwidth=2.0, width=3.0];
+  reasoning [label="Intent Reasoner\nConfidence 판단", fillcolor="#EEF9FF", color="#72CDE4"];
+  executor [label="Action Executor\nPPT + Music + Browser", fillcolor="#F5FBF8", color="#96DDBD"];
+  feedback [label="Feedback\nCorrect + Wrong + Accidental", fillcolor="#FFF4F6", color="#F3A9B9"];
+
+  { rank=same; input; feature; discard; }
+  { rank=same; encoder; context; observation; }
+  { rank=same; pattern; suggestion; memory; }
+  { rank=same; reasoning; executor; feedback; }
+
+  input -> feature;
+  feature -> discard [style=dashed, color="#E08CA1"];
+  feature -> encoder;
+  encoder -> observation;
+  context -> observation;
+  observation -> pattern;
+  pattern -> suggestion;
+  suggestion -> memory;
+  memory -> reasoning;
+  observation -> reasoning;
+  reasoning -> executor;
+  executor -> feedback;
+  feedback -> memory [constraint=false];
+  reasoning -> suggestion [style=dashed, constraint=false];
+
+  input -> encoder [style=invis, weight=5];
+  discard -> observation [style=invis, weight=5];
+  context -> suggestion [style=invis, weight=5];
+  pattern -> reasoning [style=invis, weight=5];
+}

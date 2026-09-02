@@ -1,0 +1,12 @@
+digraph LOOP {
+  graph [rankdir=LR, bgcolor="#FFFFFF", pad="0.25", nodesep="0.20", ranksep="0.40", splines=curved, fontname="Noto Sans CJK KR"];
+  node [shape=ellipse, style="filled", fontname="Noto Sans CJK KR", fontsize=13, penwidth=1.4, margin="0.16,0.09"];
+  edge [color="#7E8BA4", penwidth=1.5, arrowsize=0.72, fontname="Noto Sans CJK KR", fontsize=9];
+  o [label="Observation", fillcolor="#EAF8FC", color="#72CDE4"];
+  p [label="Pattern", fillcolor="#EDFAF4", color="#96DDBD"];
+  s [label="Suggestion", fillcolor="#FFF8E7", color="#EACB7D"];
+  m [label="Memory", fillcolor="#EDE9FF", color="#9F8CFF"];
+  e [label="Execution", fillcolor="#EDFAF4", color="#96DDBD"];
+  f [label="Feedback", fillcolor="#FFF0F4", color="#F3A9B9"];
+  o -> p -> s -> m -> e -> f -> m;
+}

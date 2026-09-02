@@ -1,0 +1,104 @@
+{
+  "project_name": "SilentOrchestra 2.0",
+  "hackathon_theme": "Personalized Spatial AI Agent / Human-AI Interaction",
+  "problem_statement": "고정 제스처를 외우게 하는 대신 사용자의 반복 행동과 맥락을 관찰해 개인의 몸짓 언어를 학습한다.",
+  "target_user": "발표·미디어 제어를 자연스러운 개인 몸짓으로 수행하고 싶은 사용자",
+  "mvp": [
+    "Presentation와 Music context",
+    "3~4개 motion pattern",
+    "3회 반복 패턴 제안",
+    "사용자 승인 후 Personal Gesture Memory 활성화",
+    "동일 gesture의 context별 intent 분기",
+    "dry-run action execution",
+    "feedback 기반 confidence 갱신",
+    "optional OpenCV optical flow"
+  ],
+  "out_of_scope": [
+    "IoT 실기기",
+    "공간 자동 인식",
+    "얼굴 인식",
+    "클라우드 영상",
+    "범용 LLM agent",
+    "인증/결제"
+  ],
+  "success_metrics": [
+    "원본 프레임 저장 0건",
+    "승인 전 자동 실행 0회",
+    "핵심 테스트 통과",
+    "90초 데모 완료"
+  ],
+  "tech_stack": [
+    "Python",
+    "FastAPI",
+    "SQLAlchemy",
+    "SQLite",
+    "Vanilla JavaScript",
+    "OpenCV(optional)",
+    "Pytest"
+  ],
+  "data_sources": [
+    "실시간 사용자 행동 이벤트",
+    "합성 SQL seed 데이터"
+  ],
+  "current_phase": "submission_ready",
+  "assumptions": [
+    "로컬 데모용 SQLite",
+    "패턴 제안 임계값 3회",
+    "OS action은 기본 dry-run",
+    "웹캠 입력은 선택 기능"
+  ],
+  "decisions": [
+    "gesture-command mapping보다 observation-memory-feedback schema 우선",
+    "관계도에 필요한 executions 감사 로그 추가",
+    "단일 FastAPI 서버에서 API와 웹 UI 제공",
+    "13-slide PptxGenJS deck with speaker notes and render QA"
+  ],
+  "deliverables": [
+    "docs/brief.md",
+    "docs/architecture.md",
+    "docs/erd.md",
+    "docs/api.md",
+    "docs/demo-script.md",
+    "sql/schema.sql",
+    "sql/seed.sql",
+    "sql/queries.sql",
+    "sql/tests.sql",
+    "sql/validation-report.json",
+    "src/silent_orchestra",
+    "tests/test_api.py",
+    "scripts/webcam_gesture_client.py",
+    "SilentOrchestra_2.0_기획서.docx",
+    "SilentOrchestra_2.0_해커톤_발표자료.pptx",
+    "presentation/build_deck.js",
+    "presentation/README.md",
+    "scripts/validate_sqlite.py"
+  ],
+  "work_items": [
+    {
+      "name": "기획 정리",
+      "status": "done"
+    },
+    {
+      "name": "ERD·SQL",
+      "status": "done"
+    },
+    {
+      "name": "FastAPI backend",
+      "status": "done"
+    },
+    {
+      "name": "Web MVP",
+      "status": "done"
+    },
+    {
+      "name": "Tests",
+      "status": "done"
+    },
+    {
+      "name": "DOCX/PPTX render QA",
+      "status": "done"
+    }
+  ],
+  "blockers": [],
+  "next_action": "start_demo.bat 실행 후 docs/demo-script.md 순서로 90초 리허설"
+}

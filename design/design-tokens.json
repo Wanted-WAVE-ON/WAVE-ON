@@ -1,0 +1,53 @@
+{
+  "color": {
+    "background": "#070912",
+    "panel": "#111525",
+    "textPrimary": "#F5F7FF",
+    "textMuted": "#939BB6",
+    "cyan": "#72E6FF",
+    "violet": "#9F8CFF",
+    "success": "#70F0BA",
+    "danger": "#FF7D9B"
+  },
+  "typography": {
+    "fontFamily": "Pretendard, Noto Sans KR, Inter, sans-serif",
+    "display": {
+      "size": 38,
+      "weight": 610,
+      "lineHeight": 1.15
+    },
+    "heading": {
+      "size": 22,
+      "weight": 650,
+      "lineHeight": 1.25
+    },
+    "body": {
+      "size": 14,
+      "weight": 400,
+      "lineHeight": 1.7
+    },
+    "caption": {
+      "size": 11,
+      "weight": 500,
+      "lineHeight": 1.5
+    }
+  },
+  "spacing": {
+    "xs": 4,
+    "sm": 8,
+    "md": 16,
+    "lg": 24,
+    "xl": 32
+  },
+  "radius": {
+    "sm": 10,
+    "md": 14,
+    "lg": 22,
+    "pill": 999
+  },
+  "motion": {
+    "fast": "180ms",
+    "normal": "260ms",
+    "slow": "520ms"
+  }
+}

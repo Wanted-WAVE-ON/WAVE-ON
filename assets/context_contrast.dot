@@ -1,0 +1,14 @@
+digraph C {
+  graph [rankdir=LR, bgcolor="#FFFFFF", pad="0.25", nodesep="0.45", ranksep="0.55", splines=ortho, fontname="Noto Sans CJK KR"];
+  node [shape=box, style="rounded,filled", fontname="Noto Sans CJK KR", fontsize=14, color="#D7DDEB", fillcolor="#F8FAFF", margin="0.22,0.16"];
+  edge [color="#7C8AA5", penwidth=1.6, arrowsize=0.75, fontname="Noto Sans CJK KR", fontsize=10];
+  gesture [label="같은 몸짓\nswipe:right", fillcolor="#EAF8FC", color="#72CDE4", penwidth=2];
+  ppt [label="Context\nPresentation", fillcolor="#EDE9FF", color="#9F8CFF"];
+  music [label="Context\nMusic", fillcolor="#EDE9FF", color="#9F8CFF"];
+  nextslide [label="Intent\nNEXT_SLIDE", fillcolor="#EDFAF4", color="#96DDBD"];
+  nexttrack [label="Intent\nNEXT_TRACK", fillcolor="#EDFAF4", color="#96DDBD"];
+  gesture -> ppt;
+  gesture -> music;
+  ppt -> nextslide;
+  music -> nexttrack;
+}

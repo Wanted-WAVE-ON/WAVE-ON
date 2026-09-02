@@ -1,0 +1,228 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Any
+
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from .database import Base
+
+
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    contexts: Mapped[list["Context"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+
+
+class Context(Base):
+    __tablename__ = "contexts"
+    __table_args__ = (
+        CheckConstraint(
+            "activity IN ('presentation','music','browser','other')",
+            name="ck_context_activity",
+        ),
+        Index("ix_contexts_user_activity", "user_id", "activity"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    active_app: Mapped[str] = mapped_column(String(100), nullable=False)
+    activity: Mapped[str] = mapped_column(String(32), nullable=False)
+    space: Mapped[str] = mapped_column(String(100), default="unspecified", nullable=False)
+    device: Mapped[str] = mapped_column(String(100), default="laptop", nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    user: Mapped[User] = relationship(back_populates="contexts")
+    observations: Mapped[list["GestureObservation"]] = relationship(
+        back_populates="context", cascade="all, delete-orphan"
+    )
+
+
+class GestureObservation(Base):
+    __tablename__ = "gesture_observations"
+    __table_args__ = (
+        CheckConstraint("duration_ms >= 0", name="ck_observation_duration"),
+        CheckConstraint("frame_stored = 0", name="ck_raw_frame_never_stored"),
+        Index("ix_observations_user_gesture", "user_id", "gesture_key"),
+        Index("ix_observations_detected_at", "detected_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    context_id: Mapped[str] = mapped_column(ForeignKey("contexts.id", ondelete="CASCADE"), nullable=False)
+    gesture_key: Mapped[str] = mapped_column(String(120), nullable=False)
+    gesture_embedding: Mapped[list[float]] = mapped_column(JSON, nullable=False)
+    motion_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    direction: Mapped[str] = mapped_column(String(30), default="none", nullable=False)
+    duration_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    frame_stored: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    context: Mapped[Context] = relationship(back_populates="observations")
+    action: Mapped["Action | None"] = relationship(back_populates="observation", uselist=False)
+
+
+class Action(Base):
+    __tablename__ = "actions"
+    __table_args__ = (
+        CheckConstraint("executed_by IN ('USER','AGENT')", name="ck_action_executor"),
+        Index("ix_actions_user_type", "user_id", "action_type"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    observation_id: Mapped[str] = mapped_column(
+        ForeignKey("gesture_observations.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    action_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    target: Mapped[str] = mapped_column(String(100), nullable=False)
+    parameters: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    executed_by: Mapped[str] = mapped_column(String(16), default="USER", nullable=False)
+    executed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    observation: Mapped[GestureObservation] = relationship(back_populates="action")
+
+
+class GesturePattern(Base):
+    __tablename__ = "gesture_patterns"
+    __table_args__ = (
+        CheckConstraint("confidence >= 0 AND confidence <= 1", name="ck_pattern_confidence"),
+        CheckConstraint("observation_count >= 0", name="ck_pattern_count"),
+        CheckConstraint("status IN ('CANDIDATE','ACTIVE','REJECTED')", name="ck_pattern_status"),
+        UniqueConstraint(
+            "user_id", "gesture_key", "context_scope", "intent", name="uq_personal_gesture_memory"
+        ),
+        Index("ix_patterns_memory_lookup", "user_id", "context_scope", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    gesture_key: Mapped[str] = mapped_column(String(120), nullable=False)
+    gesture_embedding: Mapped[list[float]] = mapped_column(JSON, nullable=False)
+    motion_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    direction: Mapped[str] = mapped_column(String(30), nullable=False)
+    intent: Mapped[str] = mapped_column(String(64), nullable=False)
+    context_scope: Mapped[str] = mapped_column(String(32), nullable=False)
+    target: Mapped[str] = mapped_column(String(100), nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    observation_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    positive_feedback_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    negative_feedback_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    auto_execute: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="CANDIDATE", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
+
+    suggestions: Mapped[list["AgentSuggestion"]] = relationship(
+        back_populates="pattern", cascade="all, delete-orphan"
+    )
+    executions: Mapped[list["Execution"]] = relationship(
+        back_populates="pattern", cascade="all, delete-orphan"
+    )
+
+
+class AgentSuggestion(Base):
+    __tablename__ = "agent_suggestions"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('PENDING','ACCEPTED','REJECTED','MODIFIED')",
+            name="ck_suggestion_status",
+        ),
+        CheckConstraint("confidence >= 0 AND confidence <= 1", name="ck_suggestion_confidence"),
+        Index("ix_suggestions_user_status", "user_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    gesture_pattern_id: Mapped[str] = mapped_column(
+        ForeignKey("gesture_patterns.id", ondelete="CASCADE"), nullable=False
+    )
+    suggested_intent: Mapped[str] = mapped_column(String(64), nullable=False)
+    modified_intent: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="PENDING", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    responded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    pattern: Mapped[GesturePattern] = relationship(back_populates="suggestions")
+
+
+class Execution(Base):
+    __tablename__ = "executions"
+    __table_args__ = (
+        CheckConstraint("confidence >= 0 AND confidence <= 1", name="ck_execution_confidence"),
+        CheckConstraint("execution_mode IN ('DRY_RUN','OS')", name="ck_execution_mode"),
+        CheckConstraint("status IN ('SIMULATED','SUCCEEDED','FAILED')", name="ck_execution_status"),
+        Index("ix_executions_user_time", "user_id", "executed_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    gesture_pattern_id: Mapped[str] = mapped_column(
+        ForeignKey("gesture_patterns.id", ondelete="CASCADE"), nullable=False
+    )
+    observation_id: Mapped[str] = mapped_column(
+        ForeignKey("gesture_observations.id", ondelete="CASCADE"), nullable=False
+    )
+    intent: Mapped[str] = mapped_column(String(64), nullable=False)
+    target: Mapped[str] = mapped_column(String(100), nullable=False)
+    parameters: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    execution_mode: Mapped[str] = mapped_column(String(16), default="DRY_RUN", nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    executed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    pattern: Mapped[GesturePattern] = relationship(back_populates="executions")
+    feedback: Mapped[list["Feedback"]] = relationship(
+        back_populates="execution", cascade="all, delete-orphan"
+    )
+
+
+class Feedback(Base):
+    __tablename__ = "feedback"
+    __table_args__ = (
+        CheckConstraint(
+            "feedback_type IN ('CORRECT','WRONG_ACTION','ACCIDENTAL_GESTURE','IGNORE')",
+            name="ck_feedback_type",
+        ),
+        Index("ix_feedback_pattern_time", "gesture_pattern_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    gesture_pattern_id: Mapped[str] = mapped_column(
+        ForeignKey("gesture_patterns.id", ondelete="CASCADE"), nullable=False
+    )
+    execution_id: Mapped[str] = mapped_column(
+        ForeignKey("executions.id", ondelete="CASCADE"), nullable=False
+    )
+    feedback_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    corrected_intent: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    execution: Mapped[Execution] = relationship(back_populates="feedback")

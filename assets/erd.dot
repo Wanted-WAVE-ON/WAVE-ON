@@ -1,0 +1,89 @@
+digraph ERD {
+  graph [rankdir=LR, bgcolor="#FFFFFF", pad="0.25", nodesep="0.42", ranksep="0.60", splines=ortho, fontname="Noto Sans CJK KR"];
+  node [shape=plain, fontname="Noto Sans CJK KR"];
+  edge [color="#8390A8", penwidth=1.3, arrowsize=0.65, fontname="Noto Sans CJK KR", fontsize=8, fontcolor="#5B667B"];
+
+  users [label=<
+    <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="7" COLOR="#9F8CFF">
+      <TR><TD BGCOLOR="#EDE9FF"><B>users</B></TD></TR>
+      <TR><TD ALIGN="LEFT">PK id</TD></TR>
+      <TR><TD ALIGN="LEFT">name</TD></TR>
+      <TR><TD ALIGN="LEFT">created_at</TD></TR>
+    </TABLE>>];
+
+  contexts [label=<
+    <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="7" COLOR="#72CDE4">
+      <TR><TD BGCOLOR="#EAF8FC"><B>contexts</B></TD></TR>
+      <TR><TD ALIGN="LEFT">PK id · FK user_id</TD></TR>
+      <TR><TD ALIGN="LEFT">active_app · activity</TD></TR>
+      <TR><TD ALIGN="LEFT">space · device</TD></TR>
+      <TR><TD ALIGN="LEFT">captured_at</TD></TR>
+    </TABLE>>];
+
+  observations [label=<
+    <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="7" COLOR="#72CDE4">
+      <TR><TD BGCOLOR="#EAF8FC"><B>gesture_observations</B></TD></TR>
+      <TR><TD ALIGN="LEFT">PK id · FK user_id/context_id</TD></TR>
+      <TR><TD ALIGN="LEFT">gesture_key · embedding</TD></TR>
+      <TR><TD ALIGN="LEFT">motion_type · direction</TD></TR>
+      <TR><TD ALIGN="LEFT">duration_ms</TD></TR>
+      <TR><TD ALIGN="LEFT"><FONT COLOR="#A13955">frame_stored = 0</FONT></TD></TR>
+    </TABLE>>];
+
+  actions [label=<
+    <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="7" COLOR="#96DDBD">
+      <TR><TD BGCOLOR="#EDFAF4"><B>actions</B></TD></TR>
+      <TR><TD ALIGN="LEFT">PK id · FK observation_id</TD></TR>
+      <TR><TD ALIGN="LEFT">action_type · target</TD></TR>
+      <TR><TD ALIGN="LEFT">parameters · executed_by</TD></TR>
+      <TR><TD ALIGN="LEFT">executed_at</TD></TR>
+    </TABLE>>];
+
+  patterns [label=<
+    <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="7" COLOR="#9F8CFF">
+      <TR><TD BGCOLOR="#EDE9FF"><B>gesture_patterns</B></TD></TR>
+      <TR><TD ALIGN="LEFT">PK id · FK user_id</TD></TR>
+      <TR><TD ALIGN="LEFT">gesture_key · embedding</TD></TR>
+      <TR><TD ALIGN="LEFT">intent · context_scope</TD></TR>
+      <TR><TD ALIGN="LEFT">confidence · count</TD></TR>
+      <TR><TD ALIGN="LEFT">auto_execute · status</TD></TR>
+    </TABLE>>];
+
+  suggestions [label=<
+    <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="7" COLOR="#EACB7D">
+      <TR><TD BGCOLOR="#FFF8E7"><B>agent_suggestions</B></TD></TR>
+      <TR><TD ALIGN="LEFT">PK id · FK pattern_id</TD></TR>
+      <TR><TD ALIGN="LEFT">suggested_intent · reason</TD></TR>
+      <TR><TD ALIGN="LEFT">confidence · status</TD></TR>
+      <TR><TD ALIGN="LEFT">responded_at</TD></TR>
+    </TABLE>>];
+
+  executions [label=<
+    <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="7" COLOR="#96DDBD">
+      <TR><TD BGCOLOR="#EDFAF4"><B>executions</B></TD></TR>
+      <TR><TD ALIGN="LEFT">PK id · FK pattern/observation</TD></TR>
+      <TR><TD ALIGN="LEFT">intent · target · parameters</TD></TR>
+      <TR><TD ALIGN="LEFT">confidence · mode · status</TD></TR>
+      <TR><TD ALIGN="LEFT">error_message · executed_at</TD></TR>
+    </TABLE>>];
+
+  feedback [label=<
+    <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="7" COLOR="#F3A9B9">
+      <TR><TD BGCOLOR="#FFF0F4"><B>feedback</B></TD></TR>
+      <TR><TD ALIGN="LEFT">PK id · FK pattern/execution</TD></TR>
+      <TR><TD ALIGN="LEFT">feedback_type</TD></TR>
+      <TR><TD ALIGN="LEFT">corrected_intent</TD></TR>
+      <TR><TD ALIGN="LEFT">created_at</TD></TR>
+    </TABLE>>];
+
+  users -> contexts [label="1 : N"];
+  users -> observations [label="1 : N"];
+  contexts -> observations [label="1 : N"];
+  observations -> actions [label="1 : 0..1"];
+  users -> patterns [label="1 : N"];
+  patterns -> suggestions [label="1 : N"];
+  patterns -> executions [label="1 : N"];
+  observations -> executions [label="1 : N"];
+  executions -> feedback [label="1 : N"];
+  patterns -> feedback [label="1 : N"];
+}

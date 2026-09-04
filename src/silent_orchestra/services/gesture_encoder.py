@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import math
 
 DIRECTION_VECTORS: dict[str, tuple[float, float]] = {

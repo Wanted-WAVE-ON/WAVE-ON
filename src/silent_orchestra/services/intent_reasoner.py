@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -54,7 +52,7 @@ def infer_intent(db: Session, observation: GestureObservation, context: Context)
             "execution": None,
         }
 
-    result = execute_action(pattern.intent, pattern.target, {})
+    mode, status, error_message = execute_action(pattern.intent)
     execution = Execution(
         id=str(uuid4()),
         user_id=observation.user_id,
@@ -64,13 +62,12 @@ def infer_intent(db: Session, observation: GestureObservation, context: Context)
         target=pattern.target,
         parameters={},
         confidence=effective_confidence,
-        execution_mode=result.mode,
-        status=result.status,
-        error_message=result.error_message,
+        execution_mode=mode,
+        status=status,
+        error_message=error_message,
     )
     db.add(execution)
     db.commit()
-    db.refresh(execution)
 
     return {
         "matched": True,

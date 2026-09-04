@@ -46,7 +46,7 @@ start_demo.bat
 
 ## 검증 완료
 
-- API 테스트: 5/5 통과
+- API 테스트: 8/8 통과
 - SQLite 검증: 38 statements 통과
 - Uvicorn 서버 데모 smoke 테스트 통과
 - 웹 UI 학습/제안/자동실행 플로우 점검

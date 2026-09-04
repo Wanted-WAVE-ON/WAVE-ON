@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Execute and validate SQLite schema, seed, queries, and smoke tests."""
 
-from __future__ import annotations
-
 import argparse
 import json
 import sqlite3
@@ -23,14 +21,6 @@ class StatementResult:
     rows_preview: list[list[object]]
     error: str | None = None
     assertion: str | None = None
-
-
-def read_sql(path: Path | None) -> str:
-    if path is None:
-        return ""
-    if not path.exists():
-        raise FileNotFoundError(f"SQL file not found: {path}")
-    return path.read_text(encoding="utf-8")
 
 
 def iter_statements(sql_text: str) -> Iterable[str]:
@@ -85,19 +75,18 @@ def check_test_assertion(
 
 def execute_file(
     conn: sqlite3.Connection,
-    path: Path | None,
+    path: Path,
     label: str,
 ) -> tuple[list[StatementResult], str | None]:
     results: list[StatementResult] = []
     try:
-        text = read_sql(path)
+        text = path.read_text(encoding="utf-8")
     except OSError as exc:
         return results, str(exc)
 
     for index, statement in enumerate(iter_statements(text), start=1):
-        cursor = conn.cursor()
         try:
-            cursor.execute(statement)
+            cursor = conn.execute(statement)
             columns = [column[0] for column in cursor.description] if cursor.description else []
             rows = cursor.fetchmany(5) if cursor.description else []
             row_count = len(rows) if cursor.description else cursor.rowcount

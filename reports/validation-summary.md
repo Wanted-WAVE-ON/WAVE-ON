@@ -3,7 +3,7 @@
 ## API 및 학습 루프
 
 ```text
-5 passed
+8 passed
 ```
 
 검증 항목:
@@ -12,7 +12,11 @@
 - 3회 반복 → Suggestion → Accept → Auto execution
 - 동일 `swipe:right`의 Presentation/Music Context 분기
 - `WRONG_ACTION` feedback에 따른 confidence 감소
-- Observation에 raw frame/image 필드가 없고 `frame_stored=false`
+- 중복 Feedback 차단과 0.60 미만 Memory 자동 강등
+- Observation의 raw frame/image 입력 거부와 `frame_stored=false`
+- 지원 Context 검증과 Dashboard 현재 Context 반환
+- 최빈 Action 동률 시 Suggestion 보류
+- Suggestion Intent 수정 후 승인
 
 ## SQLite
 
@@ -34,6 +38,7 @@
 
 - 실제 HTML/CSS/JavaScript를 사용한 브라우저 시뮬레이션: 통과
 - 3회 학습 후 제안 노출: 통과
+- 제안 Intent 수정 후 Memory 활성화: 통과
 - 제안 승인 후 자동 실행 오버레이: 통과
 - 결과 이미지: `reports/ui-preview-learning.png`, `reports/ui-preview-execution.png`
 

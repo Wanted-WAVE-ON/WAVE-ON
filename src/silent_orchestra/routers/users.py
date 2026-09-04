@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -21,7 +19,6 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db)) -> User:
     user = User(id=user_id, name=payload.name)
     db.add(user)
     db.commit()
-    db.refresh(user)
     return user
 
 

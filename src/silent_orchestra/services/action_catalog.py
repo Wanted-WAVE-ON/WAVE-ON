@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 ACTION_LABELS = {
     "NEXT_SLIDE": "다음 슬라이드",
     "PREVIOUS_SLIDE": "이전 슬라이드",
@@ -12,13 +10,6 @@ ACTION_LABELS = {
     "VOLUME_DOWN": "볼륨 낮추기",
     "ZOOM_IN": "확대",
     "ZOOM_OUT": "축소",
-}
-
-TARGET_DEFAULTS = {
-    "presentation": "powerpoint",
-    "music": "media_player",
-    "browser": "browser",
-    "other": "local_device",
 }
 
 

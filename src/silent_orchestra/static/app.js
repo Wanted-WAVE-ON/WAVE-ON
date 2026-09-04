@@ -9,9 +9,9 @@ const contextDefinitions = {
     meta: "Meeting room / Laptop",
     space: "meeting_room",
     actions: [
-      { intent: "NEXT_SLIDE", target: "powerpoint", label: "다음 슬라이드" },
-      { intent: "PREVIOUS_SLIDE", target: "powerpoint", label: "이전 슬라이드" },
-      { intent: "START_PRESENTATION", target: "powerpoint", label: "발표 시작" },
+      { intent: "NEXT_SLIDE", target: "powerpoint" },
+      { intent: "PREVIOUS_SLIDE", target: "powerpoint" },
+      { intent: "START_PRESENTATION", target: "powerpoint" },
     ],
   },
   music: {
@@ -21,9 +21,9 @@ const contextDefinitions = {
     meta: "Desk / Laptop",
     space: "desk",
     actions: [
-      { intent: "NEXT_TRACK", target: "media_player", label: "다음 트랙" },
-      { intent: "PREVIOUS_TRACK", target: "media_player", label: "이전 트랙" },
-      { intent: "TOGGLE_PLAYBACK", target: "media_player", label: "재생 / 일시정지" },
+      { intent: "NEXT_TRACK", target: "media_player" },
+      { intent: "PREVIOUS_TRACK", target: "media_player" },
+      { intent: "TOGGLE_PLAYBACK", target: "media_player" },
     ],
   },
 };
@@ -55,7 +55,10 @@ let lastGestureLabel = null;
 let lastGestureSymbol = null;
 let lastExecution = null;
 let dashboardState = null;
-let overlayTimer = null;
+
+const byId = (id) => document.getElementById(id);
+const all = (selector, root = document) => root.querySelectorAll(selector);
+const intentLabel = (intent) => intentLabels[intent] || intent;
 
 async function request(path, options = {}) {
   const response = await fetch(`${API}${path}`, {
@@ -74,8 +77,13 @@ async function request(path, options = {}) {
   return response.status === 204 ? null : response.json();
 }
 
+const post = (path, body = {}) => request(path, {
+  method: "POST",
+  body: JSON.stringify(body),
+});
+
 function showToast(message) {
-  const toast = document.getElementById("toast");
+  const toast = byId("toast");
   toast.textContent = message;
   toast.classList.add("visible");
   window.clearTimeout(showToast.timer);
@@ -83,20 +91,20 @@ function showToast(message) {
 }
 
 function setAgentState(kind, title, description) {
-  const orb = document.getElementById("agentOrb");
+  const orb = byId("agentOrb");
   orb.classList.remove("listening", "success");
   if (kind) orb.classList.add(kind);
-  document.getElementById("stageTitle").textContent = title;
-  document.getElementById("stageDescription").textContent = description;
+  byId("stageTitle").textContent = title;
+  byId("stageDescription").textContent = description;
 }
 
 function renderContext() {
   const definition = contextDefinitions[currentContext];
-  document.getElementById("contextTitle").textContent = definition.title;
-  document.getElementById("activeApp").textContent = definition.app;
-  document.getElementById("appIcon").textContent = definition.appIcon;
-  document.getElementById("contextMeta").textContent = definition.meta;
-  document.querySelectorAll(".segment").forEach((button) => {
+  byId("contextTitle").textContent = definition.title;
+  byId("activeApp").textContent = definition.app;
+  byId("appIcon").textContent = definition.appIcon;
+  byId("contextMeta").textContent = definition.meta;
+  all(".segment").forEach((button) => {
     button.classList.toggle("active", button.dataset.context === currentContext);
   });
   renderActionButtons();
@@ -104,15 +112,15 @@ function renderContext() {
 }
 
 function renderActionButtons() {
-  const host = document.getElementById("actionButtons");
+  const host = byId("actionButtons");
   if (!lastObservation) {
     host.innerHTML = "";
     return;
   }
   host.innerHTML = contextDefinitions[currentContext].actions
-    .map((action) => `<button class="action-button" type="button" data-intent="${action.intent}" data-target="${action.target}">${action.label}</button>`)
+    .map((action) => `<button class="action-button" type="button" data-intent="${action.intent}" data-target="${action.target}">${intentLabel(action.intent)}</button>`)
     .join("");
-  host.querySelectorAll(".action-button").forEach((button) => {
+  all(".action-button", host).forEach((button) => {
     button.addEventListener("click", () => teachAction(button.dataset.intent, button.dataset.target));
   });
 }
@@ -122,7 +130,7 @@ async function observeGesture(button) {
   const direction = button.dataset.direction;
   lastGestureLabel = button.dataset.label;
   lastGestureSymbol = gestureSymbols[`${motion}:${direction}`] || "?";
-  document.querySelectorAll(".gesture-button").forEach((item) => item.classList.remove("active"));
+  all(".gesture-button").forEach((item) => item.classList.remove("active"));
   button.classList.add("active");
   button.disabled = true;
   setAgentState(
@@ -133,25 +141,22 @@ async function observeGesture(button) {
 
   try {
     const context = contextDefinitions[currentContext];
-    const result = await request("/observe", {
-      method: "POST",
-      body: JSON.stringify({
-        user_id: USER_ID,
-        context: {
-          active_app: context.app,
-          activity: currentContext,
-          space: context.space,
-          device: "laptop",
-        },
-        gesture: { motion_type: motion, direction, duration_ms: 430 },
-        attempt_inference: true,
-      }),
+    const result = await post("/observe", {
+      user_id: USER_ID,
+      context: {
+        active_app: context.app,
+        activity: currentContext,
+        space: context.space,
+        device: "laptop",
+      },
+      gesture: { motion_type: motion, direction, duration_ms: 430 },
+      attempt_inference: true,
     });
     lastObservation = result.observation;
 
     if (result.inference.matched) {
       lastExecution = result.inference.execution;
-      setAgentState("success", `${intentLabels[result.inference.intent] || result.inference.intent}`, result.inference.reason);
+      setAgentState("success", intentLabel(result.inference.intent), result.inference.reason);
       showActionOverlay(result.inference);
       lastObservation = null;
       updateTeachingCard("자동 실행 완료", "Agent가 현재 맥락과 개인 기억을 바탕으로 의도를 추론했습니다.");
@@ -174,27 +179,24 @@ async function observeGesture(button) {
 }
 
 function updateTeachingCard(title, description) {
-  document.getElementById("teachingTitle").textContent = title;
-  document.getElementById("teachingDescription").textContent = description;
+  byId("teachingTitle").textContent = title;
+  byId("teachingDescription").textContent = description;
 }
 
 async function teachAction(intent, target) {
   if (!lastObservation) return;
-  document.querySelectorAll(".action-button").forEach((button) => {
+  all(".action-button").forEach((button) => {
     button.disabled = true;
   });
   try {
-    const result = await request("/teach", {
-      method: "POST",
-      body: JSON.stringify({
-        user_id: USER_ID,
-        observation_id: lastObservation.id,
-        action_type: intent,
-        target,
-        parameters: {},
-      }),
+    const result = await post("/teach", {
+      user_id: USER_ID,
+      observation_id: lastObservation.id,
+      action_type: intent,
+      target,
+      parameters: {},
     });
-    const label = intentLabels[intent] || intent;
+    const label = intentLabel(intent);
     updateTeachingCard(
       `학습 진행 ${result.progress_current}/${result.progress_required}`,
       `${lastGestureLabel} -> ${label} 연결성을 관찰했습니다.`,
@@ -215,19 +217,19 @@ async function teachAction(intent, target) {
   } catch (error) {
     showToast(`학습 실패: ${error.message}`);
   } finally {
-    document.querySelectorAll(".action-button").forEach((button) => {
+    all(".action-button").forEach((button) => {
       button.disabled = false;
     });
   }
 }
 
-async function respondSuggestion(id, decision) {
+async function respondSuggestion(id, decision, modifiedIntent = null) {
   try {
-    const result = await request(`/suggestions/${id}/respond`, {
-      method: "POST",
-      body: JSON.stringify({ decision }),
+    await post(`/suggestions/${id}/respond`, {
+      decision,
+      ...(modifiedIntent ? { modified_intent: modifiedIntent } : {}),
     });
-    if (decision === "ACCEPTED") {
+    if (decision === "ACCEPTED" || decision === "MODIFIED") {
       showToast("개인 제스처 기억을 저장했습니다.");
       setAgentState(
         "success",
@@ -238,65 +240,76 @@ async function respondSuggestion(id, decision) {
       showToast("제안이 거절되었습니다. 자동 실행하지 않습니다.");
     }
     await refreshDashboard();
-    return result;
   } catch (error) {
     showToast(`제안 처리 실패: ${error.message}`);
   }
 }
 
 function showActionOverlay(inference) {
-  const overlay = document.getElementById("actionOverlay");
-  document.getElementById("overlayGesture").textContent = lastGestureSymbol || "?";
-  document.getElementById("overlayAction").textContent = intentLabels[inference.intent] || inference.intent;
-  document.getElementById("overlayConfidence").textContent = `Learned gesture / ${Math.round(inference.confidence * 100)}%`;
+  const overlay = byId("actionOverlay");
+  byId("overlayGesture").textContent = lastGestureSymbol || "?";
+  byId("overlayAction").textContent = intentLabel(inference.intent);
+  byId("overlayConfidence").textContent = `Learned gesture / ${Math.round(inference.confidence * 100)}%`;
   overlay.classList.add("visible");
-  window.clearTimeout(overlayTimer);
-  overlayTimer = window.setTimeout(() => overlay.classList.remove("visible"), 5200);
+  window.clearTimeout(showActionOverlay.timer);
+  showActionOverlay.timer = window.setTimeout(() => overlay.classList.remove("visible"), 5200);
 }
 
 async function submitFeedback(type) {
   if (!lastExecution) return;
   try {
-    const result = await request(`/executions/${lastExecution.id}/feedback`, {
-      method: "POST",
-      body: JSON.stringify({ user_id: USER_ID, feedback_type: type }),
+    await post(`/executions/${lastExecution.id}/feedback`, {
+      user_id: USER_ID,
+      feedback_type: type,
     });
-    document.getElementById("actionOverlay").classList.remove("visible");
+    byId("actionOverlay").classList.remove("visible");
     showToast(type === "CORRECT" ? "정확한 실행으로 기록했습니다." : "수정 피드백을 반영해 확신도를 낮췄습니다.");
     lastExecution = null;
     await refreshDashboard();
-    return result;
   } catch (error) {
     showToast(`피드백 실패: ${error.message}`);
   }
 }
 
 function renderSuggestions(suggestions) {
-  const host = document.getElementById("suggestionContent");
+  const host = byId("suggestionContent");
   if (!suggestions.length) {
     host.innerHTML = `<div class="empty-state"><span>...</span><p>같은 몸짓과 후속 행동이 3회 반복되면 Agent가 기억을 제안합니다.</p></div>`;
     return;
   }
   const suggestion = suggestions[0];
   const confidence = Math.round(suggestion.confidence * 100);
+  const intentOptions = [...new Set(
+    Object.values(contextDefinitions).flatMap((context) => context.actions.map((action) => action.intent)),
+  )].map((intent) => (
+    `<option value="${intent}" ${intent === suggestion.suggested_intent ? "selected" : ""}>${intentLabel(intent)}</option>`
+  )).join("");
   host.innerHTML = `
     <div class="suggestion-card">
-      <h4>이 몸짓을 '${intentLabels[suggestion.suggested_intent] || suggestion.suggested_intent}'로 기억할까요?</h4>
+      <h4>이 몸짓을 '${intentLabel(suggestion.suggested_intent)}'로 기억할까요?</h4>
       <p>${suggestion.reason}</p>
       <div class="confidence-bar"><i style="width:${confidence}%"></i></div>
+      <label class="suggestion-intent-label" for="modifiedIntent">수정할 Intent</label>
+      <select class="suggestion-intent-input" id="modifiedIntent">${intentOptions}</select>
       <div class="suggestion-actions">
         <button class="primary-button" type="button" data-decision="ACCEPTED">기억하기</button>
+        <button class="secondary-button" type="button" data-decision="MODIFIED">수정</button>
         <button class="secondary-button" type="button" data-decision="REJECTED">아니요</button>
       </div>
     </div>`;
-  host.querySelectorAll("[data-decision]").forEach((button) => {
-    button.addEventListener("click", () => respondSuggestion(suggestion.id, button.dataset.decision));
+  all("[data-decision]", host).forEach((button) => {
+    button.addEventListener("click", () => {
+      const decision = button.dataset.decision;
+      if (decision !== "MODIFIED") return respondSuggestion(suggestion.id, decision);
+      const modifiedIntent = host.querySelector("#modifiedIntent").value;
+      return respondSuggestion(suggestion.id, decision, modifiedIntent);
+    });
   });
 }
 
 function renderMemories(memories) {
-  const host = document.getElementById("memoryList");
-  document.getElementById("memoryCount").textContent = memories.length;
+  const host = byId("memoryList");
+  byId("memoryCount").textContent = memories.length;
   if (!memories.length) {
     host.innerHTML = `<div class="empty-state small"><p>아직 기억된 몸짓이 없습니다.</p></div>`;
     return;
@@ -307,7 +320,7 @@ function renderMemories(memories) {
     return `<article class="memory-item">
       <div class="memory-top">
         <span class="memory-symbol">${symbol}</span>
-        <div><strong>${intentLabels[memory.intent] || memory.intent}</strong><small>${memory.motion_type} / ${memory.direction} / ${memory.observation_count} observations</small></div>
+        <div><strong>${intentLabel(memory.intent)}</strong><small>${memory.motion_type} / ${memory.direction} / ${memory.observation_count} observations</small></div>
         <span class="context-chip">${memory.context_scope}</span>
       </div>
       <div class="memory-confidence"><span>${confidence}%</span><div class="bar"><i style="width:${confidence}%"></i></div></div>
@@ -316,7 +329,7 @@ function renderMemories(memories) {
 }
 
 function renderInterpretations(memories) {
-  const host = document.getElementById("interpretationList");
+  const host = byId("interpretationList");
   const filtered = memories.filter((memory) => memory.context_scope === currentContext);
   if (!filtered.length) {
     host.innerHTML = `<div class="empty-mini">이 상황에서 학습된 몸짓이 아직 없습니다.</div>`;
@@ -325,13 +338,13 @@ function renderInterpretations(memories) {
   host.innerHTML = filtered.map((memory) => `
     <div class="interpretation-item">
       <span class="symbol">${gestureSymbols[memory.gesture_key] || "?"}</span>
-      <div><strong>${memory.motion_type} / ${memory.direction}</strong><small>-> ${intentLabels[memory.intent] || memory.intent}</small></div>
+      <div><strong>${memory.motion_type} / ${memory.direction}</strong><small>-> ${intentLabel(memory.intent)}</small></div>
       <em>${Math.round(memory.confidence * 100)}%</em>
     </div>`).join("");
 }
 
 function renderEvents(events) {
-  const host = document.getElementById("eventList");
+  const host = byId("eventList");
   if (!events.length) {
     host.innerHTML = `<div class="empty-mini">이벤트를 기다리는 중입니다.</div>`;
     return;
@@ -339,16 +352,16 @@ function renderEvents(events) {
   host.innerHTML = events.map((event) => {
     const date = new Date(event.time);
     const time = Number.isNaN(date.getTime()) ? "" : date.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    return `<div class="event-item" data-type="${event.type}"><span class="event-dot"></span><div><strong>${intentLabels[event.title] || event.title}</strong><small>${event.detail}</small></div><time>${time}</time></div>`;
+    return `<div class="event-item" data-type="${event.type}"><span class="event-dot"></span><div><strong>${intentLabel(event.title)}</strong><small>${event.detail}</small></div><time>${time}</time></div>`;
   }).join("");
 }
 
 async function refreshDashboard() {
   const state = await request(`/dashboard?user_id=${encodeURIComponent(USER_ID)}`);
   dashboardState = state;
-  document.getElementById("metricObservations").textContent = state.counts.observations;
-  document.getElementById("metricMemories").textContent = state.counts.learned_memories;
-  document.getElementById("metricPending").textContent = state.counts.pending_suggestions;
+  byId("metricObservations").textContent = state.counts.observations;
+  byId("metricMemories").textContent = state.counts.learned_memories;
+  byId("metricPending").textContent = state.counts.pending_suggestions;
   renderSuggestions(state.suggestions);
   renderMemories(state.memories);
   renderInterpretations(state.memories);
@@ -356,10 +369,10 @@ async function refreshDashboard() {
 }
 
 async function resetDemo() {
-  const button = document.getElementById("resetButton");
+  const button = byId("resetButton");
   button.disabled = true;
   try {
-    await request("/demo/reset", { method: "POST", body: "{}" });
+    await post("/demo/reset");
     lastObservation = null;
     lastExecution = null;
     updateTeachingCard("먼저 몸짓을 발생시켜 주세요", "학습 전에는 아무 동작도 자동 실행하지 않습니다.");
@@ -380,14 +393,14 @@ async function resetDemo() {
 
 async function init() {
   try {
-    await request("/demo/bootstrap", { method: "POST", body: "{}" });
+    await post("/demo/bootstrap");
     renderContext();
     await refreshDashboard();
   } catch (error) {
     showToast(`서버 연결 실패: ${error.message}`);
   }
 
-  document.querySelectorAll(".segment").forEach((button) => {
+  all(".segment").forEach((button) => {
     button.addEventListener("click", () => {
       currentContext = button.dataset.context;
       lastObservation = null;
@@ -400,14 +413,14 @@ async function init() {
       );
     });
   });
-  document.querySelectorAll(".gesture-button").forEach((button) => {
+  all(".gesture-button").forEach((button) => {
     button.addEventListener("click", () => observeGesture(button));
   });
-  document.getElementById("resetButton").addEventListener("click", resetDemo);
-  document.querySelectorAll("[data-feedback]").forEach((button) => {
+  byId("resetButton").addEventListener("click", resetDemo);
+  all("[data-feedback]").forEach((button) => {
     button.addEventListener("click", () => submitFeedback(button.dataset.feedback));
   });
-  document.getElementById("actionOverlay").addEventListener("click", (event) => {
+  byId("actionOverlay").addEventListener("click", (event) => {
     if (event.target.id === "actionOverlay") event.currentTarget.classList.remove("visible");
   });
 }

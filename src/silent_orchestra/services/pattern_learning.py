@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from collections import Counter
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -19,7 +17,7 @@ def _id() -> str:
 
 
 def _confidence(winner_count: int, total_count: int) -> float:
-    consistency = winner_count / max(total_count, 1)
+    consistency = winner_count / total_count
     score = 0.35 + (0.10 * min(winner_count, 5)) + (0.22 * consistency)
     return round(min(0.99, score), 3)
 
@@ -62,7 +60,9 @@ def record_user_action(
     ).all()
 
     action_counts = Counter(row.action_type for row in rows)
-    winning_intent, winning_count = action_counts.most_common(1)[0]
+    ranked_actions = action_counts.most_common(2)
+    winning_intent, winning_count = ranked_actions[0]
+    has_unique_winner = len(ranked_actions) == 1 or winning_count > ranked_actions[1][1]
     total_count = len(rows)
     confidence = _confidence(winning_count, total_count)
     winning_target = next(row.target for row in rows if row.action_type == winning_intent)
@@ -110,7 +110,7 @@ def record_user_action(
     db.flush()
 
     suggestion: AgentSuggestion | None = None
-    if winning_count >= settings.suggestion_threshold:
+    if has_unique_winner and winning_count >= settings.suggestion_threshold:
         suggestion = db.scalar(
             select(AgentSuggestion).where(
                 AgentSuggestion.gesture_pattern_id == pattern.id,
@@ -133,10 +133,6 @@ def record_user_action(
             db.add(suggestion)
 
     db.commit()
-    db.refresh(action)
-    db.refresh(pattern)
-    if suggestion is not None:
-        db.refresh(suggestion)
     return action, pattern, suggestion
 
 
@@ -157,15 +153,12 @@ def respond_to_suggestion(
     suggestion.status = decision
     suggestion.responded_at = now
 
-    if decision == "ACCEPTED":
-        pattern.status = "ACTIVE"
-        pattern.auto_execute = True
-        pattern.confidence = max(pattern.confidence, settings.auto_execution_threshold)
-    elif decision == "MODIFIED":
-        if not modified_intent:
-            raise ValueError("modified_intent is required for MODIFIED")
-        suggestion.modified_intent = modified_intent
-        pattern.intent = modified_intent
+    if decision in {"ACCEPTED", "MODIFIED"}:
+        if decision == "MODIFIED":
+            if not modified_intent:
+                raise ValueError("modified_intent is required for MODIFIED")
+            suggestion.modified_intent = modified_intent
+            pattern.intent = modified_intent
         pattern.status = "ACTIVE"
         pattern.auto_execute = True
         pattern.confidence = max(pattern.confidence, settings.auto_execution_threshold)
@@ -178,6 +171,4 @@ def respond_to_suggestion(
 
     pattern.updated_at = now
     db.commit()
-    db.refresh(suggestion)
-    db.refresh(pattern)
     return suggestion, pattern

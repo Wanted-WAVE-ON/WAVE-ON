@@ -98,13 +98,14 @@ python -m pip install pyautogui
 ## 검증
 
 ```bash
+python -m pip install -r requirements-dev.txt
 python -m pytest -q
 python scripts/validate_sqlite.py --schema sql/schema.sql --seed sql/seed.sql --queries sql/queries.sql --tests sql/tests.sql --report sql/validation-report.json
 ```
 
 현재 검증 상태:
 
-- Pytest: 5개 테스트 통과
+- Pytest: 8개 테스트 통과
 - SQLite: 38개 statement 검증 통과
 - 원본 프레임 저장 0건 조건 통과
 - 동일 제스처의 Presentation/Music 맥락 분기 통과

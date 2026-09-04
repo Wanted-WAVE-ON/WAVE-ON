@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from datetime import datetime, timezone
 from typing import Any
 
@@ -39,7 +37,7 @@ class Context(Base):
     __tablename__ = "contexts"
     __table_args__ = (
         CheckConstraint(
-            "activity IN ('presentation','music','browser','other')",
+            "activity IN ('presentation','music')",
             name="ck_context_activity",
         ),
         Index("ix_contexts_user_activity", "user_id", "activity"),
@@ -110,6 +108,7 @@ class GesturePattern(Base):
         CheckConstraint("confidence >= 0 AND confidence <= 1", name="ck_pattern_confidence"),
         CheckConstraint("observation_count >= 0", name="ck_pattern_count"),
         CheckConstraint("status IN ('CANDIDATE','ACTIVE','REJECTED')", name="ck_pattern_status"),
+        CheckConstraint("context_scope IN ('presentation','music')", name="ck_pattern_context"),
         UniqueConstraint(
             "user_id", "gesture_key", "context_scope", "intent", name="uq_personal_gesture_memory"
         ),
@@ -219,7 +218,7 @@ class Feedback(Base):
         ForeignKey("gesture_patterns.id", ondelete="CASCADE"), nullable=False
     )
     execution_id: Mapped[str] = mapped_column(
-        ForeignKey("executions.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("executions.id", ondelete="CASCADE"), nullable=False, unique=True
     )
     feedback_type: Mapped[str] = mapped_column(String(32), nullable=False)
     corrected_intent: Mapped[str | None] = mapped_column(String(64), nullable=True)

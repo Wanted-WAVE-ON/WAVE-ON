@@ -11,7 +11,7 @@
 ## 실행
 
 ```bash
-python /home/oai/skills/hackathon-team-copilot/scripts/validate_sqlite.py   --schema sql/schema.sql   --seed sql/seed.sql   --queries sql/queries.sql   --tests sql/tests.sql   --report sql/validation-report.json
+python scripts/validate_sqlite.py --schema sql/schema.sql --seed sql/seed.sql --queries sql/queries.sql --tests sql/tests.sql --report sql/validation-report.json
 ```
 
 현재 검증 결과: `passed`, 총 38 statements.

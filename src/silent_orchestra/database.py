@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from collections.abc import Generator
 
 from sqlalchemy import create_engine, event
@@ -14,7 +12,7 @@ class Base(DeclarativeBase):
 
 
 def build_engine(database_url: str):
-    kwargs: dict = {"future": True}
+    kwargs: dict = {}
     if database_url.startswith("sqlite"):
         kwargs["connect_args"] = {"check_same_thread": False}
         if database_url in {"sqlite://", "sqlite:///:memory:"}:
@@ -36,11 +34,8 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False
 
 
 def get_db() -> Generator[Session, None, None]:
-    db = SessionLocal()
-    try:
+    with SessionLocal() as db:
         yield db
-    finally:
-        db.close()
 
 
 def init_db() -> None:

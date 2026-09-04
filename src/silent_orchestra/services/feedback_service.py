@@ -1,8 +1,7 @@
-from __future__ import annotations
-
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import Execution, Feedback, GesturePattern
@@ -27,6 +26,8 @@ def record_feedback(
     pattern = db.get(GesturePattern, execution.gesture_pattern_id)
     if pattern is None:
         raise ValueError("Gesture pattern not found")
+    if db.scalar(select(Feedback).where(Feedback.execution_id == execution.id)) is not None:
+        raise ValueError("Feedback already recorded for this execution")
 
     feedback = Feedback(
         id=str(uuid4()),
@@ -52,6 +53,4 @@ def record_feedback(
     pattern.updated_at = datetime.now(timezone.utc)
 
     db.commit()
-    db.refresh(feedback)
-    db.refresh(pattern)
     return feedback, pattern

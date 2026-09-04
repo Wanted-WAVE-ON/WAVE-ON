@@ -30,7 +30,7 @@ python run_demo.py
 
 ## 검증 결과
 
-- Pytest 5개 통과
+- Pytest 8개 통과
 - SQLite 38개 statement 통과
 - 브라우저 UI는 정적 렌더·동작 시나리오 검증 예정/완료 보고서 참조
 - PPTX·DOCX는 렌더링 후 시각 검수 보고서 참조

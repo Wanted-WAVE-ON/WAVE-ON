@@ -14,6 +14,8 @@ Base URL: `http://127.0.0.1:8000/api/v1`
 - `404`: 사용자, 제안, 실행 등 대상 리소스를 찾을 수 없음
 - `422`: Pydantic 입력 검증 실패
 
+요청 스키마에 정의되지 않은 필드는 허용하지 않습니다. MVP `activity`는 `presentation`과 `music`만 지원합니다.
+
 ## 1. 데모 준비
 
 ### `POST /demo/bootstrap`
@@ -24,7 +26,7 @@ Base URL: `http://127.0.0.1:8000/api/v1`
 {
   "user": {"id": "demo-user", "name": "수영", "created_at": "..."},
   "suggestion_threshold": 3,
-  "auto_execution_threshold": 0.85,
+  "auto_execution_threshold": 0.60,
   "os_actions_enabled": false
 }
 ```
@@ -151,9 +153,9 @@ Base URL: `http://127.0.0.1:8000/api/v1`
 
 ## 5. Personal Gesture Memory
 
-### `GET /memories?user_id=demo-user`
+### `GET /memories?user_id=demo-user&gesture_key=swipe:right&context_scope=presentation`
 
-`ACTIVE` 상태의 승인된 개인 제스처 기억만 반환합니다.
+`gesture_key`와 `context_scope`는 선택 필터입니다. `ACTIVE`이고 confidence가 자동 실행 기준 이상인 개인 제스처 기억만 반환합니다.
 
 ## 6. 실행 피드백
 
@@ -177,12 +179,13 @@ Base URL: `http://127.0.0.1:8000/api/v1`
 | `IGNORE` | -0.05 |
 
 confidence가 0.60 미만이면 자동 실행을 중지하고 다시 `CANDIDATE` 상태로 전환합니다.
+동일 실행에 Feedback을 다시 제출하면 `400`을 반환하며 confidence를 중복 변경하지 않습니다.
 
 ## 7. 대시보드
 
 ### `GET /dashboard?user_id=demo-user`
 
-UI에 필요한 집계, memories, candidates, pending suggestions, recent events를 한 번에 반환합니다.
+현재 Context와 UI에 필요한 집계, memories, candidates, pending suggestions, recent events를 한 번에 반환합니다. 아직 Observation이 없으면 `context`는 `null`입니다.
 
 ## 8. Privacy 상태
 

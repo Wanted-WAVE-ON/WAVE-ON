@@ -12,14 +12,27 @@ from .action_catalog import CONTEXT_INTENTS, action_label
 from .gesture_encoder import running_average
 
 
-def _id() -> str:
-    return str(uuid4())
-
-
 def _confidence(winner_count: int, total_count: int) -> float:
     consistency = winner_count / total_count
     score = 0.35 + (0.10 * min(winner_count, 5)) + (0.22 * consistency)
     return round(min(0.99, score), 3)
+
+
+def check_intent_change(db: Session, pattern: GesturePattern, intent: str, field: str) -> None:
+    """Reject an intent the context forbids or that another memory already owns."""
+    if intent not in CONTEXT_INTENTS.get(pattern.context_scope, ()):
+        raise ValueError(f"{field} is not allowed for this context")
+    duplicate = db.scalar(
+        select(GesturePattern).where(
+            GesturePattern.user_id == pattern.user_id,
+            GesturePattern.gesture_key == pattern.gesture_key,
+            GesturePattern.context_scope == pattern.context_scope,
+            GesturePattern.intent == intent,
+            GesturePattern.id != pattern.id,
+        )
+    )
+    if duplicate is not None:
+        raise ValueError("A gesture memory with this intent already exists")
 
 
 def record_user_action(
@@ -38,7 +51,7 @@ def record_user_action(
         raise ValueError("action_type is not allowed for this context")
 
     action = Action(
-        id=_id(),
+        id=str(uuid4()),
         user_id=request.user_id,
         observation_id=observation.id,
         action_type=request.action_type,
@@ -49,8 +62,9 @@ def record_user_action(
     db.add(action)
     db.flush()
 
+    # Every action this user took after the same gesture in the same activity.
     rows = db.execute(
-        select(Action.action_type, Action.target, GestureObservation.gesture_embedding)
+        select(Action.action_type, Action.target)
         .join(GestureObservation, Action.observation_id == GestureObservation.id)
         .join(Context, GestureObservation.context_id == Context.id)
         .where(
@@ -60,12 +74,10 @@ def record_user_action(
         )
     ).all()
 
-    action_counts = Counter(row.action_type for row in rows)
-    ranked_actions = action_counts.most_common(2)
+    ranked_actions = Counter(row.action_type for row in rows).most_common(2)
     winning_intent, winning_count = ranked_actions[0]
     has_unique_winner = len(ranked_actions) == 1 or winning_count > ranked_actions[1][1]
-    total_count = len(rows)
-    confidence = _confidence(winning_count, total_count)
+    confidence = _confidence(winning_count, len(rows))
     winning_target = next(row.target for row in rows if row.action_type == winning_intent)
 
     pattern = db.scalar(
@@ -79,7 +91,7 @@ def record_user_action(
 
     if pattern is None:
         pattern = GesturePattern(
-            id=_id(),
+            id=str(uuid4()),
             user_id=request.user_id,
             gesture_key=observation.gesture_key,
             gesture_embedding=observation.gesture_embedding,
@@ -95,11 +107,10 @@ def record_user_action(
         )
         db.add(pattern)
     else:
-        previous_count = pattern.observation_count
         pattern.gesture_embedding = running_average(
             pattern.gesture_embedding,
             observation.gesture_embedding,
-            previous_count,
+            pattern.observation_count,
         )
         pattern.target = winning_target
         pattern.confidence = confidence
@@ -112,6 +123,8 @@ def record_user_action(
 
     suggestion: AgentSuggestion | None = None
     if not has_unique_winner:
+        # The gesture is ambiguous again: stop auto-executing it and withdraw
+        # any suggestion that was still waiting for an answer.
         scope_patterns = db.scalars(
             select(GesturePattern).where(
                 GesturePattern.user_id == request.user_id,
@@ -123,15 +136,13 @@ def record_user_action(
             if item.status == "ACTIVE":
                 item.status = "CANDIDATE"
                 item.auto_execute = False
-        pattern_ids = [item.id for item in scope_patterns]
-        pending_suggestions = db.scalars(
+        for pending in db.scalars(
             select(AgentSuggestion).where(
-                AgentSuggestion.gesture_pattern_id.in_(pattern_ids),
+                AgentSuggestion.gesture_pattern_id.in_([item.id for item in scope_patterns]),
                 AgentSuggestion.status == "PENDING",
             )
-        ).all()
-        for item in pending_suggestions:
-            db.delete(item)
+        ):
+            db.delete(pending)
     elif winning_count >= settings.suggestion_threshold:
         suggestion = db.scalar(
             select(AgentSuggestion).where(
@@ -141,7 +152,7 @@ def record_user_action(
         )
         if suggestion is None and pattern.status != "ACTIVE":
             suggestion = AgentSuggestion(
-                id=_id(),
+                id=str(uuid4()),
                 user_id=request.user_id,
                 gesture_pattern_id=pattern.id,
                 suggested_intent=winning_intent,
@@ -166,6 +177,8 @@ def respond_to_suggestion(
 ) -> tuple[AgentSuggestion, GesturePattern]:
     if suggestion.status != "PENDING":
         raise ValueError("Only pending suggestions can be answered")
+    if decision not in {"ACCEPTED", "MODIFIED", "REJECTED"}:
+        raise ValueError(f"Unsupported decision: {decision}")
 
     pattern = db.get(GesturePattern, suggestion.gesture_pattern_id)
     if pattern is None:
@@ -174,28 +187,21 @@ def respond_to_suggestion(
     if decision == "MODIFIED":
         if not modified_intent:
             raise ValueError("modified_intent is required for MODIFIED")
-        if modified_intent not in CONTEXT_INTENTS.get(pattern.context_scope, ()):
-            raise ValueError("modified_intent is not allowed for this context")
-        existing_pattern = db.scalar(
-            select(GesturePattern).where(
-                GesturePattern.user_id == pattern.user_id,
-                GesturePattern.gesture_key == pattern.gesture_key,
-                GesturePattern.context_scope == pattern.context_scope,
-                GesturePattern.intent == modified_intent,
-                GesturePattern.id != pattern.id,
-            )
-        )
-        if existing_pattern is not None:
-            raise ValueError("A gesture memory with this intent already exists")
+        check_intent_change(db, pattern, modified_intent, "modified_intent")
 
     now = datetime.now(timezone.utc)
     suggestion.status = decision
     suggestion.responded_at = now
 
-    if decision in {"ACCEPTED", "MODIFIED"}:
+    if decision == "REJECTED":
+        pattern.status = "REJECTED"
+        pattern.auto_execute = False
+        pattern.confidence = max(0.0, round(pattern.confidence - 0.20, 3))
+    else:
         if decision == "MODIFIED":
             suggestion.modified_intent = modified_intent
             pattern.intent = modified_intent
+        # Only one memory per gesture may auto-execute in a given context.
         db.execute(
             update(GesturePattern)
             .where(
@@ -210,12 +216,6 @@ def respond_to_suggestion(
         pattern.status = "ACTIVE"
         pattern.auto_execute = True
         pattern.confidence = max(pattern.confidence, settings.auto_execution_threshold)
-    elif decision == "REJECTED":
-        pattern.status = "REJECTED"
-        pattern.auto_execute = False
-        pattern.confidence = max(0.0, round(pattern.confidence - 0.20, 3))
-    else:
-        raise ValueError(f"Unsupported decision: {decision}")
 
     pattern.updated_at = now
     db.commit()

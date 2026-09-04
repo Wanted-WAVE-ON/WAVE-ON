@@ -12,19 +12,19 @@ class Base(DeclarativeBase):
 
 
 def build_engine(database_url: str):
-    kwargs: dict = {}
-    if database_url.startswith("sqlite"):
-        kwargs["connect_args"] = {"check_same_thread": False}
-        if database_url in {"sqlite://", "sqlite:///:memory:"}:
-            kwargs["poolclass"] = StaticPool
-    engine = create_engine(database_url, **kwargs)
+    if not database_url.startswith("sqlite"):
+        return create_engine(database_url)
 
-    if database_url.startswith("sqlite"):
-        @event.listens_for(engine, "connect")
-        def _set_sqlite_pragma(dbapi_connection, _connection_record):  # type: ignore[no-untyped-def]
-            cursor = dbapi_connection.cursor()
-            cursor.execute("PRAGMA foreign_keys=ON")
-            cursor.close()
+    in_memory = database_url in {"sqlite://", "sqlite:///:memory:"}
+    engine = create_engine(
+        database_url,
+        connect_args={"check_same_thread": False},
+        **({"poolclass": StaticPool} if in_memory else {}),
+    )
+
+    @event.listens_for(engine, "connect")
+    def _enable_foreign_keys(dbapi_connection, _connection_record):  # type: ignore[no-untyped-def]
+        dbapi_connection.execute("PRAGMA foreign_keys=ON")
 
     return engine
 
@@ -32,6 +32,8 @@ def build_engine(database_url: str):
 engine = build_engine(settings.database_url)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False, class_=Session)
 
+# SQLite cannot add CHECK constraints to a table that already exists, so
+# databases created by an older version get the same guarantees via triggers.
 SQLITE_COMPATIBILITY_GUARDS = (
     """CREATE TRIGGER IF NOT EXISTS guard_context_activity_insert
        BEFORE INSERT ON contexts

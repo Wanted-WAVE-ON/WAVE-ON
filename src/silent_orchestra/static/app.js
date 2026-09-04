@@ -43,10 +43,10 @@ const intentLabels = {
 };
 
 const gestureSymbols = {
-  "swipe:right": ">>",
-  "swipe:left": "<<",
-  "open_palm:none": "[]",
-  "circle:clockwise": "O",
+  "swipe:right": "→",
+  "swipe:left": "←",
+  "open_palm:none": "▢",
+  "circle:clockwise": "○",
 };
 
 let currentContext = "presentation";
@@ -55,6 +55,7 @@ let lastGestureLabel = null;
 let lastGestureSymbol = null;
 let lastExecution = null;
 let dashboardState = null;
+let lastGestureButton = null;
 
 const byId = (id) => document.getElementById(id);
 const all = (selector, root = document) => root.querySelectorAll(selector);
@@ -82,6 +83,26 @@ const post = (path, body = {}) => request(path, {
   body: JSON.stringify(body),
 });
 
+// Disable the given controls while `task` runs. A control the task marked with
+// its own data-state (e.g. "error") keeps it.
+async function withBusy(controls, task) {
+  const buttons = [...controls];
+  buttons.forEach((button) => {
+    button.disabled = true;
+    button.dataset.state = "loading";
+    button.setAttribute("aria-busy", "true");
+  });
+  try {
+    return await task();
+  } finally {
+    buttons.forEach((button) => {
+      button.disabled = false;
+      button.removeAttribute("aria-busy");
+      if (button.dataset.state === "loading") button.removeAttribute("data-state");
+    });
+  }
+}
+
 function showToast(message) {
   const toast = byId("toast");
   toast.textContent = message;
@@ -94,6 +115,9 @@ function setAgentState(kind, title, description) {
   const orb = byId("agentOrb");
   orb.classList.remove("listening", "success");
   if (kind) orb.classList.add(kind);
+  byId("agentStatus").textContent = kind === "listening"
+    ? "제스처 관찰 중"
+    : kind === "success" ? "의도 실행 완료" : "공간을 이해하는 중";
   byId("stageTitle").textContent = title;
   byId("stageDescription").textContent = description;
 }
@@ -105,7 +129,9 @@ function renderContext() {
   byId("appIcon").textContent = definition.appIcon;
   byId("contextMeta").textContent = definition.meta;
   all(".segment").forEach((button) => {
-    button.classList.toggle("active", button.dataset.context === currentContext);
+    const isActive = button.dataset.context === currentContext;
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-pressed", String(isActive));
   });
   renderActionButtons();
   renderInterpretations(dashboardState?.memories || []);
@@ -130,52 +156,53 @@ async function observeGesture(button) {
   const direction = button.dataset.direction;
   lastGestureLabel = button.dataset.label;
   lastGestureSymbol = gestureSymbols[`${motion}:${direction}`] || "?";
+  lastGestureButton = button;
   all(".gesture-button").forEach((item) => item.classList.remove("active"));
   button.classList.add("active");
-  button.disabled = true;
   setAgentState(
     "listening",
     "동작을 관찰하고 있어요",
     "모션 특징과 현재 상황만 분석합니다. 원본 프레임은 저장하지 않습니다.",
   );
 
-  try {
-    const context = contextDefinitions[currentContext];
-    const result = await post("/observe", {
-      user_id: USER_ID,
-      context: {
-        active_app: context.app,
-        activity: currentContext,
-        space: context.space,
-        device: "laptop",
-      },
-      gesture: { motion_type: motion, direction, duration_ms: 430 },
-      attempt_inference: true,
-    });
-    lastObservation = result.observation;
+  await withBusy([button], async () => {
+    try {
+      const context = contextDefinitions[currentContext];
+      const result = await post("/observe", {
+        user_id: USER_ID,
+        context: {
+          active_app: context.app,
+          activity: currentContext,
+          space: context.space,
+          device: "laptop",
+        },
+        gesture: { motion_type: motion, direction, duration_ms: 430 },
+        attempt_inference: true,
+      });
+      lastObservation = result.observation;
 
-    if (result.inference.matched) {
-      lastExecution = result.inference.execution;
-      setAgentState("success", intentLabel(result.inference.intent), result.inference.reason);
-      showActionOverlay(result.inference);
-      lastObservation = null;
-      updateTeachingCard("자동 실행 완료", "Agent가 현재 맥락과 개인 기억을 바탕으로 의도를 추론했습니다.");
-    } else {
-      setAgentState(
-        "",
-        "다음 행동을 알려주세요",
-        "몸짓 직후 실제로 하려던 행동을 선택하면 반복 패턴을 학습합니다.",
-      );
-      updateTeachingCard(`${lastGestureLabel} 관찰 완료`, "이 몸짓 직후 사용자가 한 행동을 선택해 주세요.");
-      renderActionButtons();
+      if (result.inference.matched) {
+        lastExecution = result.inference.execution;
+        setAgentState("success", intentLabel(result.inference.intent), result.inference.reason);
+        showActionOverlay(result.inference);
+        lastObservation = null;
+        updateTeachingCard("자동 실행 완료", "Agent가 현재 맥락과 개인 기억을 바탕으로 의도를 추론했습니다.");
+      } else {
+        setAgentState(
+          "",
+          "다음 행동을 알려주세요",
+          "몸짓 직후 실제로 하려던 행동을 선택하면 반복 패턴을 학습합니다.",
+        );
+        updateTeachingCard(`${lastGestureLabel} 관찰 완료`, "이 몸짓 직후 사용자가 한 행동을 선택해 주세요.");
+        renderActionButtons();
+      }
+      await refreshDashboard();
+    } catch (error) {
+      showToast(`관찰 실패: ${error.message}`);
+      button.dataset.state = "error";
+      setAgentState("", "다시 시도해 주세요", "API 연결 상태와 서버 로그를 확인해 주세요.");
     }
-    await refreshDashboard();
-  } catch (error) {
-    showToast(`관찰 실패: ${error.message}`);
-    setAgentState("", "다시 시도해 주세요", "API 연결 상태와 서버 로그를 확인해 주세요.");
-  } finally {
-    button.disabled = false;
-  }
+  });
 }
 
 function updateTeachingCard(title, description) {
@@ -185,64 +212,56 @@ function updateTeachingCard(title, description) {
 
 async function teachAction(intent, target) {
   if (!lastObservation) return;
-  all(".action-button").forEach((button) => {
-    button.disabled = true;
-  });
-  try {
-    const result = await post("/teach", {
-      user_id: USER_ID,
-      observation_id: lastObservation.id,
-      action_type: intent,
-      target,
-      parameters: {},
-    });
-    const label = intentLabel(intent);
-    updateTeachingCard(
-      `학습 진행 ${result.progress_current}/${result.progress_required}`,
-      `${lastGestureLabel} -> ${label} 연결성을 관찰했습니다.`,
-    );
-    setAgentState(
-      "",
-      `패턴을 학습하고 있어요 / ${result.progress_current}/${result.progress_required}`,
-      "같은 상황에서 행동이 반복되면 먼저 제안하고, 승인 후에만 자동 실행합니다.",
-    );
-    if (result.suggestion?.status === "PENDING") {
-      showToast("새로운 패턴을 발견했습니다. 기억 여부를 확인해 주세요.");
-    } else {
-      showToast(`${lastGestureLabel}와 ${label}의 관계를 관찰했습니다.`);
+  await withBusy(all(".action-button"), async () => {
+    try {
+      const result = await post("/teach", {
+        user_id: USER_ID,
+        observation_id: lastObservation.id,
+        action_type: intent,
+        target,
+        parameters: {},
+      });
+      const label = intentLabel(intent);
+      updateTeachingCard(
+        `학습 진행 ${result.progress_current}/${result.progress_required}`,
+        `${lastGestureLabel} → ${label} 연결성을 관찰했습니다.`,
+      );
+      setAgentState(
+        "",
+        `패턴을 학습하고 있어요 / ${result.progress_current}/${result.progress_required}`,
+        "같은 상황에서 행동이 반복되면 먼저 제안하고, 승인 후에만 자동 실행합니다.",
+      );
+      if (result.suggestion?.status === "PENDING") {
+        showToast("새로운 패턴을 발견했습니다. 기억 여부를 확인해 주세요.");
+      }
+      lastObservation = null;
+      renderActionButtons();
+      await refreshDashboard();
+    } catch (error) {
+      showToast(`학습 실패: ${error.message}`);
     }
-    lastObservation = null;
-    renderActionButtons();
-    await refreshDashboard();
-  } catch (error) {
-    showToast(`학습 실패: ${error.message}`);
-  } finally {
-    all(".action-button").forEach((button) => {
-      button.disabled = false;
-    });
-  }
+  });
 }
 
 async function respondSuggestion(id, decision, modifiedIntent = null) {
-  try {
-    await post(`/suggestions/${id}/respond`, {
-      decision,
-      ...(modifiedIntent ? { modified_intent: modifiedIntent } : {}),
-    });
-    if (decision === "ACCEPTED" || decision === "MODIFIED") {
-      showToast("개인 제스처 기억을 저장했습니다.");
-      setAgentState(
-        "success",
-        "새로운 몸짓 언어를 기억했어요",
-        "이제 같은 상황에서 이 몸짓을 사용하면 Agent가 자동으로 실행합니다.",
-      );
-    } else {
-      showToast("제안이 거절되었습니다. 자동 실행하지 않습니다.");
+  await withBusy(all("[data-decision]"), async () => {
+    try {
+      await post(`/suggestions/${id}/respond`, {
+        decision,
+        ...(modifiedIntent ? { modified_intent: modifiedIntent } : {}),
+      });
+      if (decision === "ACCEPTED" || decision === "MODIFIED") {
+        setAgentState(
+          "success",
+          "새로운 몸짓 언어를 기억했어요",
+          "이제 같은 상황에서 이 몸짓을 사용하면 Agent가 자동으로 실행합니다.",
+        );
+      }
+      await refreshDashboard();
+    } catch (error) {
+      showToast(`제안 처리 실패: ${error.message}`);
     }
-    await refreshDashboard();
-  } catch (error) {
-    showToast(`제안 처리 실패: ${error.message}`);
-  }
+  });
 }
 
 function showActionOverlay(inference) {
@@ -250,33 +269,41 @@ function showActionOverlay(inference) {
   byId("overlayGesture").textContent = lastGestureSymbol || "?";
   byId("overlayAction").textContent = intentLabel(inference.intent);
   byId("overlayConfidence").textContent = `Learned gesture / ${Math.round(inference.confidence * 100)}%`;
-  overlay.classList.add("visible");
+  if (!overlay.open) overlay.showModal();
   window.clearTimeout(showActionOverlay.timer);
-  showActionOverlay.timer = window.setTimeout(() => overlay.classList.remove("visible"), 5200);
+  showActionOverlay.timer = window.setTimeout(() => closeActionOverlay(), 5200);
+}
+
+function closeActionOverlay() {
+  const overlay = byId("actionOverlay");
+  if (overlay.open) overlay.close();
 }
 
 async function submitFeedback(type) {
   if (!lastExecution) return;
-  try {
-    await post(`/executions/${lastExecution.id}/feedback`, {
-      user_id: USER_ID,
-      feedback_type: type,
-    });
-    byId("actionOverlay").classList.remove("visible");
-    showToast(type === "CORRECT" ? "정확한 실행으로 기록했습니다." : "수정 피드백을 반영해 확신도를 낮췄습니다.");
-    lastExecution = null;
-    await refreshDashboard();
-  } catch (error) {
-    showToast(`피드백 실패: ${error.message}`);
-  }
+  await withBusy(all("[data-feedback]"), async () => {
+    try {
+      await post(`/executions/${lastExecution.id}/feedback`, {
+        user_id: USER_ID,
+        feedback_type: type,
+      });
+      closeActionOverlay();
+      lastExecution = null;
+      await refreshDashboard();
+    } catch (error) {
+      showToast(`피드백 실패: ${error.message}`);
+    }
+  });
 }
 
 function renderSuggestions(suggestions, candidates) {
   const host = byId("suggestionContent");
   if (!suggestions.length) {
-    host.innerHTML = `<div class="empty-state"><span>...</span><p>같은 몸짓과 후속 행동이 3회 반복되면 Agent가 기억을 제안합니다.</p></div>`;
+    host.dataset.state = "empty";
+    host.innerHTML = `<div class="empty-state"><span aria-hidden="true">—</span><p>같은 몸짓과 후속 행동이 3회 반복되면 Agent가 기억을 제안합니다.</p></div>`;
     return;
   }
+  host.dataset.state = "pending";
   const suggestion = suggestions[0];
   const confidence = Math.round(suggestion.confidence * 100);
   const pattern = candidates.find((item) => item.id === suggestion.gesture_pattern_id);
@@ -287,10 +314,10 @@ function renderSuggestions(suggestions, candidates) {
   )).join("");
   host.innerHTML = `
     <div class="suggestion-card">
-      <h4>이 몸짓을 '${intentLabel(suggestion.suggested_intent)}'로 기억할까요?</h4>
+      <h3>이 몸짓을 “${intentLabel(suggestion.suggested_intent)}”로 기억할까요?</h3>
       <p>${suggestion.reason}</p>
       <div class="confidence-bar"><i style="width:${confidence}%"></i></div>
-      <label class="suggestion-intent-label" for="modifiedIntent">수정할 Intent</label>
+      <label class="suggestion-intent-label" for="modifiedIntent">수정할 의도</label>
       <select class="suggestion-intent-input" id="modifiedIntent">${intentOptions}</select>
       <div class="suggestion-actions">
         <button class="primary-button" type="button" data-decision="ACCEPTED">기억하기</button>
@@ -339,7 +366,7 @@ function renderInterpretations(memories) {
   host.innerHTML = filtered.map((memory) => `
     <div class="interpretation-item">
       <span class="symbol">${gestureSymbols[memory.gesture_key] || "?"}</span>
-      <div><strong>${memory.motion_type} / ${memory.direction}</strong><small>-> ${intentLabel(memory.intent)}</small></div>
+      <div><strong>${memory.motion_type} / ${memory.direction}</strong><small>→ ${intentLabel(memory.intent)}</small></div>
       <em>${Math.round(memory.confidence * 100)}%</em>
     </div>`).join("");
 }
@@ -371,25 +398,26 @@ async function refreshDashboard() {
 
 async function resetDemo() {
   const button = byId("resetButton");
-  button.disabled = true;
-  try {
-    await post("/demo/reset");
-    lastObservation = null;
-    lastExecution = null;
-    updateTeachingCard("먼저 몸짓을 발생시켜 주세요", "학습 전에는 아무 동작도 자동 실행하지 않습니다.");
-    setAgentState(
-      "",
-      "몸짓을 자연스럽게 사용해 보세요",
-      "별도의 제스처를 외울 필요가 없습니다. AI가 반복되는 행동과 맥락을 관찰합니다.",
-    );
-    renderActionButtons();
-    await refreshDashboard();
-    showToast("데모 데이터를 초기화했습니다.");
-  } catch (error) {
-    showToast(`초기화 실패: ${error.message}`);
-  } finally {
-    button.disabled = false;
-  }
+  button.textContent = "초기화 중…";
+  await withBusy([button], async () => {
+    try {
+      await post("/demo/reset");
+      lastObservation = null;
+      lastExecution = null;
+      updateTeachingCard("먼저 몸짓을 발생시켜 주세요", "학습 전에는 아무 동작도 자동 실행하지 않습니다.");
+      setAgentState(
+        "",
+        "몸짓을 자연스럽게\n사용해 보세요",
+        "별도의 제스처를 외울 필요가 없습니다. AI가 반복되는 행동과 맥락을 관찰합니다.",
+      );
+      renderActionButtons();
+      await refreshDashboard();
+    } catch (error) {
+      showToast(`초기화 실패: ${error.message}`);
+      button.dataset.state = "error";
+    }
+  });
+  button.textContent = "초기화";
 }
 
 async function init() {
@@ -422,7 +450,14 @@ async function init() {
     button.addEventListener("click", () => submitFeedback(button.dataset.feedback));
   });
   byId("actionOverlay").addEventListener("click", (event) => {
-    if (event.target.id === "actionOverlay") event.currentTarget.classList.remove("visible");
+    if (event.target.id !== "actionOverlay") return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const isOutside = event.clientX < rect.left || event.clientX > rect.right
+      || event.clientY < rect.top || event.clientY > rect.bottom;
+    if (isOutside) closeActionOverlay();
+  });
+  byId("actionOverlay").addEventListener("close", () => {
+    lastGestureButton?.focus({ preventScroll: true });
   });
 }
 

@@ -4,8 +4,9 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..models import Execution, Feedback, GesturePattern
-from .action_catalog import CONTEXT_INTENTS
+from .pattern_learning import check_intent_change
 
 DELTAS = {
     "CORRECT": 0.03,
@@ -29,20 +30,10 @@ def record_feedback(
         raise ValueError("Gesture pattern not found")
     if db.scalar(select(Feedback).where(Feedback.execution_id == execution.id)) is not None:
         raise ValueError("Feedback already recorded for this execution")
-    if corrected_intent and feedback_type == "WRONG_ACTION":
-        if corrected_intent not in CONTEXT_INTENTS.get(pattern.context_scope, ()):
-            raise ValueError("corrected_intent is not allowed for this context")
-        duplicate = db.scalar(
-            select(GesturePattern).where(
-                GesturePattern.user_id == pattern.user_id,
-                GesturePattern.gesture_key == pattern.gesture_key,
-                GesturePattern.context_scope == pattern.context_scope,
-                GesturePattern.intent == corrected_intent,
-                GesturePattern.id != pattern.id,
-            )
-        )
-        if duplicate is not None:
-            raise ValueError("A gesture memory with this intent already exists")
+
+    correcting = bool(corrected_intent) and feedback_type == "WRONG_ACTION"
+    if correcting:
+        check_intent_change(db, pattern, corrected_intent, "corrected_intent")
 
     feedback = Feedback(
         id=str(uuid4()),
@@ -54,15 +45,14 @@ def record_feedback(
     )
     db.add(feedback)
 
-    delta = DELTAS[feedback_type]
-    pattern.confidence = round(min(0.99, max(0.0, pattern.confidence + delta)), 3)
+    pattern.confidence = round(min(0.99, max(0.0, pattern.confidence + DELTAS[feedback_type])), 3)
     if feedback_type == "CORRECT":
         pattern.positive_feedback_count += 1
     else:
         pattern.negative_feedback_count += 1
-    if corrected_intent and feedback_type == "WRONG_ACTION":
+    if correcting:
         pattern.intent = corrected_intent
-    if pattern.confidence < 0.60:
+    if pattern.confidence < settings.auto_execution_threshold:
         pattern.auto_execute = False
         pattern.status = "CANDIDATE"
     pattern.updated_at = datetime.now(timezone.utc)

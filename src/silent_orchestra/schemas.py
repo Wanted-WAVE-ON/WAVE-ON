@@ -187,6 +187,28 @@ class FeedbackResponse(BaseModel):
     pattern: PatternRead
 
 
+class SuggestionResponse(BaseModel):
+    suggestion: SuggestionRead
+    pattern: PatternRead
+
+
+class DashboardEvent(BaseModel):
+    time: datetime
+    type: str
+    title: str
+    detail: str
+
+
+class DashboardResponse(BaseModel):
+    context: ContextRead | None
+    counts: dict[str, int]
+    memories: list[PatternRead]
+    candidates: list[PatternRead]
+    suggestions: list[SuggestionRead]
+    events: list[DashboardEvent]
+    threshold: int
+
+
 class DemoBootstrapResponse(BaseModel):
     user: UserRead
     suggestion_threshold: int

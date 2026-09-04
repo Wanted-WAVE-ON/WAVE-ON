@@ -1,0 +1,70 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans+KR:wght@400;700&display=swap");
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css");
+
+:root {
+  color-scheme: dark;
+
+  --color-paper: oklch(13% 0.018 255);
+  --color-paper-2: oklch(17% 0.022 255);
+  --color-paper-3: oklch(21% 0.025 255);
+  --color-ink: oklch(95% 0.012 235);
+  --color-ink-2: oklch(78% 0.018 235);
+  --color-muted: oklch(68% 0.018 240);
+  --color-neutral: oklch(55% 0.018 245);
+  --color-rule: oklch(34% 0.026 255);
+  --color-rule-2: oklch(27% 0.023 255);
+  --color-accent: oklch(80% 0.15 210);
+  --color-accent-ink: oklch(16% 0.03 255);
+  --color-focus: oklch(80% 0.18 205);
+  --color-learning: oklch(72% 0.12 292);
+  --color-success: oklch(78% 0.14 158);
+  --color-error: oklch(70% 0.18 20);
+  --color-overlay: oklch(9% 0.018 255 / 0.9);
+  --color-accent-wash: oklch(80% 0.15 210 / 0.1);
+  --color-learning-wash: oklch(72% 0.12 292 / 0.1);
+  --color-shadow: oklch(6% 0.018 255 / 0.5);
+
+  --font-display: "IBM Plex Sans KR", "Apple SD Gothic Neo", sans-serif;
+  --font-body: "Pretendard Variable", Pretendard, "Apple SD Gothic Neo", sans-serif;
+  --font-outlier: "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-md: 1.25rem;
+  --text-lg: 1.5625rem;
+  --text-xl: 1.953rem;
+  --text-2xl: 2.441rem;
+  --text-display: clamp(1.9rem, 4vw, 2.75rem);
+
+  --space-3xs: 0.25rem;
+  --space-2xs: 0.5rem;
+  --space-xs: 0.75rem;
+  --space-sm: 1rem;
+  --space-md: 1.5rem;
+  --space-lg: 2rem;
+  --space-xl: 2.5rem;
+  --space-2xl: 4rem;
+  --space-3xl: 6rem;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-micro: 120ms;
+  --dur-short: 220ms;
+  --dur-long: 420ms;
+
+  --rule-hair: 1px;
+  --rule-fine: 2px;
+  --radius-card: 0.75rem;
+  --radius-pill: 999px;
+  --radius-input: 0.625rem;
+  --control-height: 2.75rem;
+  --shadow-dialog: 0 2rem 5rem var(--color-shadow);
+
+  --z-base: 1;
+  --z-raised: 10;
+  --z-sticky: 200;
+  --z-modal: 400;
+  --z-toast: 500;
+}

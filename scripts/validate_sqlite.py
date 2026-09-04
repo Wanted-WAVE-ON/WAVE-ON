@@ -5,25 +5,11 @@ import argparse
 import json
 import sqlite3
 import sys
-from dataclasses import asdict, dataclass
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterable
 
 
-@dataclass
-class StatementResult:
-    source: str
-    index: int
-    sql_preview: str
-    status: str
-    columns: list[str]
-    row_count: int | None
-    rows_preview: list[list[object]]
-    error: str | None = None
-    assertion: str | None = None
-
-
-def iter_statements(sql_text: str) -> Iterable[str]:
+def iter_statements(sql_text: str) -> Iterator[str]:
     """Split SQL using sqlite3.complete_statement while preserving SQL syntax."""
     buffer: list[str] = []
     for line in sql_text.splitlines(keepends=True):
@@ -43,11 +29,7 @@ def preview(sql: str, limit: int = 180) -> str:
     return single_line if len(single_line) <= limit else single_line[: limit - 3] + "..."
 
 
-def check_test_assertion(
-    statement: str,
-    columns: list[str],
-    rows: list[sqlite3.Row | tuple[object, ...]],
-) -> tuple[bool, str | None]:
+def check_test_assertion(statement: str, columns: list[str], rows: list) -> tuple[bool, str | None]:
     """Apply optional semantic assertions for statements in tests.sql.
 
     Supported conventions:
@@ -56,15 +38,13 @@ def check_test_assertion(
       return exactly one row with a truthy first value.
     Other statements are treated as execution-only smoke tests.
     """
-    normalized = " ".join(statement.strip().lower().split())
-    if normalized.startswith("pragma foreign_key_check"):
+    if " ".join(statement.strip().lower().split()).startswith("pragma foreign_key_check"):
         if rows:
             return False, "PRAGMA foreign_key_check returned violations"
         return True, "foreign_key_check returned no violations"
 
     first_column = columns[0].strip().lower() if columns else ""
-    is_assertion = first_column in {"ok", "pass", "passed"} or first_column.startswith("assert_")
-    if not is_assertion:
+    if not (first_column in {"ok", "pass", "passed"} or first_column.startswith("assert_")):
         return True, None
     if len(rows) != 1:
         return False, "Assertion query must return exactly one row"
@@ -73,62 +53,42 @@ def check_test_assertion(
     return True, f"Assertion column '{columns[0]}' evaluated to true"
 
 
-def execute_file(
-    conn: sqlite3.Connection,
-    path: Path,
-    label: str,
-) -> tuple[list[StatementResult], str | None]:
-    results: list[StatementResult] = []
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError as exc:
-        return results, str(exc)
-
-    for index, statement in enumerate(iter_statements(text), start=1):
+def execute_file(conn: sqlite3.Connection, path: Path, label: str) -> tuple[list[dict], str | None]:
+    """Run every statement in `path`, stopping at the first failure."""
+    results: list[dict] = []
+    for index, statement in enumerate(iter_statements(path.read_text(encoding="utf-8")), start=1):
+        result: dict = {
+            "source": label,
+            "index": index,
+            "sql_preview": preview(statement),
+            "status": "passed",
+            "columns": [],
+            "row_count": None,
+            "rows_preview": [],
+            "error": None,
+            "assertion": None,
+        }
+        results.append(result)
         try:
             cursor = conn.execute(statement)
-            columns = [column[0] for column in cursor.description] if cursor.description else []
-            rows = cursor.fetchmany(5) if cursor.description else []
-            row_count = len(rows) if cursor.description else cursor.rowcount
-            status = "passed"
-            error: str | None = None
-            assertion: str | None = None
-
-            if label == "tests":
-                assertion_ok, assertion = check_test_assertion(statement, columns, rows)
-                if not assertion_ok:
-                    status = "failed"
-                    error = assertion
-
-            result = StatementResult(
-                source=label,
-                index=index,
-                sql_preview=preview(statement),
-                status=status,
-                columns=columns,
-                row_count=row_count,
-                rows_preview=[list(row) for row in rows],
-                error=error,
-                assertion=assertion,
-            )
-            results.append(result)
-            if status == "failed":
-                return results, error
         except sqlite3.Error as exc:
-            error = str(exc)
-            results.append(
-                StatementResult(
-                    source=label,
-                    index=index,
-                    sql_preview=preview(statement),
-                    status="failed",
-                    columns=[],
-                    row_count=None,
-                    rows_preview=[],
-                    error=error,
-                )
+            result.update(status="failed", error=str(exc))
+            return results, result["error"]
+
+        if cursor.description:
+            result["columns"] = [column[0] for column in cursor.description]
+            result["rows_preview"] = [list(row) for row in cursor.fetchmany(5)]
+            result["row_count"] = len(result["rows_preview"])
+        else:
+            result["row_count"] = cursor.rowcount
+
+        if label == "tests":
+            passed, result["assertion"] = check_test_assertion(
+                statement, result["columns"], result["rows_preview"]
             )
-            return results, error
+            if not passed:
+                result.update(status="failed", error=result["assertion"])
+                return results, result["error"]
     return results, None
 
 
@@ -144,7 +104,7 @@ def main() -> int:
 
     database = str(args.database) if args.database else ":memory:"
     args.report.parent.mkdir(parents=True, exist_ok=True)
-    all_results: list[StatementResult] = []
+    all_results: list[dict] = []
     failure: str | None = None
 
     try:
@@ -179,7 +139,7 @@ def main() -> int:
             "foreign_key_check": "must return zero rows",
             "assertion_columns": "ok/pass/passed/assert_* must return one truthy value",
         },
-        "results": [asdict(result) for result in all_results],
+        "results": all_results,
     }
     args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 

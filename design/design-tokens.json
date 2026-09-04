@@ -1,53 +1,44 @@
 {
+  "$schema": "https://design-tokens.github.io/community-group/format/",
   "color": {
-    "background": "#070912",
-    "panel": "#111525",
-    "textPrimary": "#F5F7FF",
-    "textMuted": "#939BB6",
-    "cyan": "#72E6FF",
-    "violet": "#9F8CFF",
-    "success": "#70F0BA",
-    "danger": "#FF7D9B"
+    "paper": { "$value": "oklch(13% 0.018 255)", "$type": "color" },
+    "paper-2": { "$value": "oklch(17% 0.022 255)", "$type": "color" },
+    "paper-3": { "$value": "oklch(21% 0.025 255)", "$type": "color" },
+    "ink": { "$value": "oklch(95% 0.012 235)", "$type": "color" },
+    "ink-2": { "$value": "oklch(78% 0.018 235)", "$type": "color" },
+    "muted": { "$value": "oklch(68% 0.018 240)", "$type": "color" },
+    "rule": { "$value": "oklch(34% 0.026 255)", "$type": "color" },
+    "accent": { "$value": "oklch(80% 0.15 210)", "$type": "color" },
+    "accent-ink": { "$value": "oklch(16% 0.03 255)", "$type": "color" },
+    "focus": { "$value": "oklch(80% 0.18 205)", "$type": "color" },
+    "learning": { "$value": "oklch(72% 0.12 292)", "$type": "color" },
+    "success": { "$value": "oklch(78% 0.14 158)", "$type": "color" },
+    "error": { "$value": "oklch(70% 0.18 20)", "$type": "color" }
   },
-  "typography": {
-    "fontFamily": "Pretendard, Noto Sans KR, Inter, sans-serif",
-    "display": {
-      "size": 38,
-      "weight": 610,
-      "lineHeight": 1.15
-    },
-    "heading": {
-      "size": 22,
-      "weight": 650,
-      "lineHeight": 1.25
-    },
-    "body": {
-      "size": 14,
-      "weight": 400,
-      "lineHeight": 1.7
-    },
-    "caption": {
-      "size": 11,
-      "weight": 500,
-      "lineHeight": 1.5
-    }
+  "font": {
+    "display": { "$value": "IBM Plex Sans KR", "$type": "fontFamily" },
+    "body": { "$value": "Pretendard Variable", "$type": "fontFamily" },
+    "outlier": { "$value": "IBM Plex Mono", "$type": "fontFamily" }
   },
-  "spacing": {
-    "xs": 4,
-    "sm": 8,
-    "md": 16,
-    "lg": 24,
-    "xl": 32
+  "space": {
+    "3xs": { "$value": "0.25rem", "$type": "dimension" },
+    "2xs": { "$value": "0.5rem", "$type": "dimension" },
+    "xs": { "$value": "0.75rem", "$type": "dimension" },
+    "sm": { "$value": "1rem", "$type": "dimension" },
+    "md": { "$value": "1.5rem", "$type": "dimension" },
+    "lg": { "$value": "2rem", "$type": "dimension" },
+    "xl": { "$value": "2.5rem", "$type": "dimension" },
+    "2xl": { "$value": "4rem", "$type": "dimension" },
+    "3xl": { "$value": "6rem", "$type": "dimension" }
   },
   "radius": {
-    "sm": 10,
-    "md": 14,
-    "lg": 22,
-    "pill": 999
+    "card": { "$value": "0.75rem", "$type": "dimension" },
+    "input": { "$value": "0.625rem", "$type": "dimension" },
+    "pill": { "$value": "999px", "$type": "dimension" }
   },
   "motion": {
-    "fast": "180ms",
-    "normal": "260ms",
-    "slow": "520ms"
+    "micro": { "$value": "120ms", "$type": "duration" },
+    "short": { "$value": "220ms", "$type": "duration" },
+    "long": { "$value": "420ms", "$type": "duration" }
   }
 }

@@ -1,6 +1,3 @@
-from silent_orchestra.models import Action
-
-
 def bootstrap(client):
     response = client.post("/api/v1/demo/bootstrap")
     assert response.status_code == 200
@@ -190,27 +187,37 @@ def test_unsupported_context_is_rejected_without_creating_data(client):
     assert dashboard["counts"]["observations"] == 0
 
 
-def test_tied_intents_do_not_create_suggestion(client, db_session):
+def test_tied_intents_withdraw_pending_suggestion(client):
     bootstrap(client)
-    observation_ids = [observe(client)["observation"]["id"] for _ in range(6)]
-    for index, observation_id in enumerate(observation_ids[:5]):
-        intent = "NEXT_SLIDE" if index < 3 else "PREVIOUS_SLIDE"
-        db_session.add(
-            Action(
-                id=f"seed-action-{index}",
-                user_id="demo-user",
-                observation_id=observation_id,
-                action_type=intent,
-                target="powerpoint",
-                parameters={},
-                executed_by="USER",
-            )
-        )
-    db_session.commit()
+    train_until_suggested(
+        client, "presentation", "PowerPoint", "NEXT_SLIDE", "powerpoint"
+    )
+    for _ in range(3):
+        event = observe(client)
+        result = teach(client, event["observation"]["id"], "PREVIOUS_SLIDE", "powerpoint")
 
-    result = teach(client, observation_ids[-1], "PREVIOUS_SLIDE", "powerpoint")
     assert result["suggestion"] is None
-    assert client.get("/api/v1/suggestions", params={"user_id": "demo-user"}).json() == []
+    pending = client.get(
+        "/api/v1/suggestions", params={"user_id": "demo-user", "status": "PENDING"}
+    ).json()
+    assert pending == []
+
+
+def test_tied_intents_suspend_active_memory(client):
+    bootstrap(client)
+    train_and_accept(client, "presentation", "PowerPoint", "NEXT_SLIDE", "powerpoint")
+    for _ in range(3):
+        event = observe(client)
+        result = teach(client, event["observation"]["id"], "PREVIOUS_SLIDE", "powerpoint")
+
+    assert result["pattern"]["status"] == "CANDIDATE"
+    assert result["pattern"]["auto_execute"] is False
+    unmatched = observe(client)
+    assert unmatched["inference"]["matched"] is False
+    recovered = teach(
+        client, unmatched["observation"]["id"], "NEXT_SLIDE", "powerpoint"
+    )
+    assert recovered["suggestion"]["status"] == "PENDING"
 
 
 def test_suggestion_can_be_modified(client):
@@ -227,3 +234,123 @@ def test_suggestion_can_be_modified(client):
     pattern = response.json()["pattern"]
     assert pattern["intent"] == "PREVIOUS_SLIDE"
     assert pattern["status"] == "ACTIVE"
+
+
+def test_accepting_relearned_intent_deactivates_modified_memory(client):
+    bootstrap(client)
+    suggestion = train_until_suggested(
+        client, "presentation", "PowerPoint", "NEXT_SLIDE", "powerpoint"
+    )
+    response = client.post(
+        f"/api/v1/suggestions/{suggestion['id']}/respond",
+        json={"decision": "MODIFIED", "modified_intent": "PREVIOUS_SLIDE"},
+    )
+    assert response.status_code == 200, response.text
+
+    event = observe(client)
+    relearned = teach(
+        client, event["observation"]["id"], "NEXT_SLIDE", "powerpoint"
+    )["suggestion"]
+    response = client.post(
+        f"/api/v1/suggestions/{relearned['id']}/respond",
+        json={"decision": "ACCEPTED"},
+    )
+    assert response.status_code == 200, response.text
+
+    memories = client.get(
+        "/api/v1/memories", params={"user_id": "demo-user"}
+    ).json()
+    assert [memory["intent"] for memory in memories] == ["NEXT_SLIDE"]
+
+
+def test_suggestion_rejects_intent_from_another_context(client):
+    bootstrap(client)
+    observation_id = observe(client)["observation"]["id"]
+    invalid_teach = client.post(
+        "/api/v1/teach",
+        json={
+            "user_id": "demo-user",
+            "observation_id": observation_id,
+            "action_type": "NEXT_TRACK",
+            "target": "media_player",
+        },
+    )
+    assert invalid_teach.status_code == 400
+    assert "not allowed" in invalid_teach.json()["detail"]
+
+    suggestion = train_until_suggested(
+        client, "presentation", "PowerPoint", "NEXT_SLIDE", "powerpoint"
+    )
+
+    response = client.post(
+        f"/api/v1/suggestions/{suggestion['id']}/respond",
+        json={"decision": "MODIFIED", "modified_intent": "NEXT_TRACK"},
+    )
+    assert response.status_code == 400
+    assert "not allowed" in response.json()["detail"]
+
+
+def test_suggestion_rejects_duplicate_modified_intent(client):
+    bootstrap(client)
+    train_and_accept(client, "presentation", "PowerPoint", "NEXT_SLIDE", "powerpoint")
+    suggestion = None
+    for _ in range(4):
+        event = observe(client)
+        suggestion = teach(
+            client, event["observation"]["id"], "PREVIOUS_SLIDE", "powerpoint"
+        )["suggestion"]
+
+    response = client.post(
+        f"/api/v1/suggestions/{suggestion['id']}/respond",
+        json={"decision": "MODIFIED", "modified_intent": "NEXT_SLIDE"},
+    )
+    assert response.status_code == 400
+    assert "already exists" in response.json()["detail"]
+
+
+def test_feedback_rejects_intent_from_another_context(client):
+    bootstrap(client)
+    train_and_accept(client, "presentation", "PowerPoint", "NEXT_SLIDE", "powerpoint")
+    execution = observe(client)["inference"]["execution"]
+
+    response = client.post(
+        f"/api/v1/executions/{execution['id']}/feedback",
+        json={
+            "user_id": "demo-user",
+            "feedback_type": "WRONG_ACTION",
+            "corrected_intent": "NEXT_TRACK",
+        },
+    )
+    assert response.status_code == 400
+    assert "not allowed" in response.json()["detail"]
+
+    inferred = observe(client)
+    assert inferred["inference"]["intent"] == "NEXT_SLIDE"
+
+
+def test_feedback_rejects_duplicate_corrected_intent(client):
+    bootstrap(client)
+    train_and_accept(client, "presentation", "PowerPoint", "NEXT_SLIDE", "powerpoint")
+    suggestion = None
+    for _ in range(4):
+        event = observe(client)
+        suggestion = teach(
+            client, event["observation"]["id"], "PREVIOUS_SLIDE", "powerpoint"
+        )["suggestion"]
+    response = client.post(
+        f"/api/v1/suggestions/{suggestion['id']}/respond",
+        json={"decision": "ACCEPTED"},
+    )
+    assert response.status_code == 200, response.text
+    execution = observe(client)["inference"]["execution"]
+
+    response = client.post(
+        f"/api/v1/executions/{execution['id']}/feedback",
+        json={
+            "user_id": "demo-user",
+            "feedback_type": "WRONG_ACTION",
+            "corrected_intent": "NEXT_SLIDE",
+        },
+    )
+    assert response.status_code == 400
+    assert "already exists" in response.json()["detail"]

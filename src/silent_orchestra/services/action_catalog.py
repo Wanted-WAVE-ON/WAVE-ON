@@ -12,6 +12,24 @@ ACTION_LABELS = {
     "ZOOM_OUT": "축소",
 }
 
+CONTEXT_INTENTS = {
+    "presentation": {
+        "NEXT_SLIDE",
+        "PREVIOUS_SLIDE",
+        "START_PRESENTATION",
+        "END_PRESENTATION",
+        "ZOOM_IN",
+        "ZOOM_OUT",
+    },
+    "music": {
+        "NEXT_TRACK",
+        "PREVIOUS_TRACK",
+        "TOGGLE_PLAYBACK",
+        "VOLUME_UP",
+        "VOLUME_DOWN",
+    },
+}
+
 
 def action_label(intent: str) -> str:
     return ACTION_LABELS.get(intent, intent.replace("_", " ").title())

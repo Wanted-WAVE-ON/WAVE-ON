@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import Execution, Feedback, GesturePattern
+from .action_catalog import CONTEXT_INTENTS
 
 DELTAS = {
     "CORRECT": 0.03,
@@ -28,6 +29,20 @@ def record_feedback(
         raise ValueError("Gesture pattern not found")
     if db.scalar(select(Feedback).where(Feedback.execution_id == execution.id)) is not None:
         raise ValueError("Feedback already recorded for this execution")
+    if corrected_intent and feedback_type == "WRONG_ACTION":
+        if corrected_intent not in CONTEXT_INTENTS.get(pattern.context_scope, ()):
+            raise ValueError("corrected_intent is not allowed for this context")
+        duplicate = db.scalar(
+            select(GesturePattern).where(
+                GesturePattern.user_id == pattern.user_id,
+                GesturePattern.gesture_key == pattern.gesture_key,
+                GesturePattern.context_scope == pattern.context_scope,
+                GesturePattern.intent == corrected_intent,
+                GesturePattern.id != pattern.id,
+            )
+        )
+        if duplicate is not None:
+            raise ValueError("A gesture memory with this intent already exists")
 
     feedback = Feedback(
         id=str(uuid4()),

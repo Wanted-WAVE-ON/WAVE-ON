@@ -122,6 +122,8 @@ Base URL: `http://127.0.0.1:8000/api/v1`
 }
 ```
 
+`action_type`은 관찰된 Context에서 지원하는 Intent여야 합니다. 최빈 Intent가 동률이 되면 대기 중인 제안을 철회하고 해당 몸짓의 자동 실행을 중단합니다.
+
 ## 4. 제안 조회와 응답
 
 ### `GET /suggestions?user_id=demo-user&status=PENDING`
@@ -150,6 +152,8 @@ Base URL: `http://127.0.0.1:8000/api/v1`
   "modified_intent": "PREVIOUS_SLIDE"
 }
 ```
+
+`modified_intent`도 제안이 속한 Context에서 지원해야 하며, 같은 몸짓·Context·Intent의 Memory가 이미 있으면 `400`을 반환합니다.
 
 ## 5. Personal Gesture Memory
 

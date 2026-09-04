@@ -2,13 +2,13 @@ from collections import Counter
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..models import Action, AgentSuggestion, Context, GestureObservation, GesturePattern
 from ..schemas import TeachRequest
-from .action_catalog import action_label
+from .action_catalog import CONTEXT_INTENTS, action_label
 from .gesture_encoder import running_average
 
 
@@ -31,6 +31,11 @@ def record_user_action(
         raise ValueError("Observation not found for this user")
     if observation.action is not None:
         raise ValueError("This observation already has a linked action")
+    context = db.get(Context, observation.context_id)
+    if context is None:
+        raise ValueError("Context not found")
+    if request.action_type not in CONTEXT_INTENTS.get(context.activity, ()):
+        raise ValueError("action_type is not allowed for this context")
 
     action = Action(
         id=_id(),
@@ -43,10 +48,6 @@ def record_user_action(
     )
     db.add(action)
     db.flush()
-
-    context = db.get(Context, observation.context_id)
-    if context is None:
-        raise ValueError("Context not found")
 
     rows = db.execute(
         select(Action.action_type, Action.target, GestureObservation.gesture_embedding)
@@ -110,14 +111,35 @@ def record_user_action(
     db.flush()
 
     suggestion: AgentSuggestion | None = None
-    if has_unique_winner and winning_count >= settings.suggestion_threshold:
+    if not has_unique_winner:
+        scope_patterns = db.scalars(
+            select(GesturePattern).where(
+                GesturePattern.user_id == request.user_id,
+                GesturePattern.gesture_key == observation.gesture_key,
+                GesturePattern.context_scope == context.activity,
+            )
+        ).all()
+        for item in scope_patterns:
+            if item.status == "ACTIVE":
+                item.status = "CANDIDATE"
+                item.auto_execute = False
+        pattern_ids = [item.id for item in scope_patterns]
+        pending_suggestions = db.scalars(
+            select(AgentSuggestion).where(
+                AgentSuggestion.gesture_pattern_id.in_(pattern_ids),
+                AgentSuggestion.status == "PENDING",
+            )
+        ).all()
+        for item in pending_suggestions:
+            db.delete(item)
+    elif winning_count >= settings.suggestion_threshold:
         suggestion = db.scalar(
             select(AgentSuggestion).where(
                 AgentSuggestion.gesture_pattern_id == pattern.id,
-                AgentSuggestion.status.in_(["PENDING", "ACCEPTED", "MODIFIED"]),
+                AgentSuggestion.status == "PENDING",
             )
         )
-        if suggestion is None:
+        if suggestion is None and pattern.status != "ACTIVE":
             suggestion = AgentSuggestion(
                 id=_id(),
                 user_id=request.user_id,
@@ -149,16 +171,42 @@ def respond_to_suggestion(
     if pattern is None:
         raise ValueError("Gesture pattern not found")
 
+    if decision == "MODIFIED":
+        if not modified_intent:
+            raise ValueError("modified_intent is required for MODIFIED")
+        if modified_intent not in CONTEXT_INTENTS.get(pattern.context_scope, ()):
+            raise ValueError("modified_intent is not allowed for this context")
+        existing_pattern = db.scalar(
+            select(GesturePattern).where(
+                GesturePattern.user_id == pattern.user_id,
+                GesturePattern.gesture_key == pattern.gesture_key,
+                GesturePattern.context_scope == pattern.context_scope,
+                GesturePattern.intent == modified_intent,
+                GesturePattern.id != pattern.id,
+            )
+        )
+        if existing_pattern is not None:
+            raise ValueError("A gesture memory with this intent already exists")
+
     now = datetime.now(timezone.utc)
     suggestion.status = decision
     suggestion.responded_at = now
 
     if decision in {"ACCEPTED", "MODIFIED"}:
         if decision == "MODIFIED":
-            if not modified_intent:
-                raise ValueError("modified_intent is required for MODIFIED")
             suggestion.modified_intent = modified_intent
             pattern.intent = modified_intent
+        db.execute(
+            update(GesturePattern)
+            .where(
+                GesturePattern.user_id == pattern.user_id,
+                GesturePattern.gesture_key == pattern.gesture_key,
+                GesturePattern.context_scope == pattern.context_scope,
+                GesturePattern.id != pattern.id,
+                GesturePattern.status == "ACTIVE",
+            )
+            .values(status="CANDIDATE", auto_execute=False, updated_at=now)
+        )
         pattern.status = "ACTIVE"
         pattern.auto_execute = True
         pattern.confidence = max(pattern.confidence, settings.auto_execution_threshold)

@@ -271,7 +271,7 @@ async function submitFeedback(type) {
   }
 }
 
-function renderSuggestions(suggestions) {
+function renderSuggestions(suggestions, candidates) {
   const host = byId("suggestionContent");
   if (!suggestions.length) {
     host.innerHTML = `<div class="empty-state"><span>...</span><p>같은 몸짓과 후속 행동이 3회 반복되면 Agent가 기억을 제안합니다.</p></div>`;
@@ -279,9 +279,10 @@ function renderSuggestions(suggestions) {
   }
   const suggestion = suggestions[0];
   const confidence = Math.round(suggestion.confidence * 100);
-  const intentOptions = [...new Set(
-    Object.values(contextDefinitions).flatMap((context) => context.actions.map((action) => action.intent)),
-  )].map((intent) => (
+  const pattern = candidates.find((item) => item.id === suggestion.gesture_pattern_id);
+  const intents = contextDefinitions[pattern?.context_scope]?.actions.map((action) => action.intent)
+    || [suggestion.suggested_intent];
+  const intentOptions = intents.map((intent) => (
     `<option value="${intent}" ${intent === suggestion.suggested_intent ? "selected" : ""}>${intentLabel(intent)}</option>`
   )).join("");
   host.innerHTML = `
@@ -362,7 +363,7 @@ async function refreshDashboard() {
   byId("metricObservations").textContent = state.counts.observations;
   byId("metricMemories").textContent = state.counts.learned_memories;
   byId("metricPending").textContent = state.counts.pending_suggestions;
-  renderSuggestions(state.suggestions);
+  renderSuggestions(state.suggestions, state.candidates);
   renderMemories(state.memories);
   renderInterpretations(state.memories);
   renderEvents(state.events);

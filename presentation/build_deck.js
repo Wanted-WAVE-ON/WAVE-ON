@@ -262,7 +262,7 @@ function addStep(slide, x, y, w, num, title, body, accent) {
 
   const tiers = [
     { label: 'HIGH', title: '자동 실행', body: '활성화된 개인 기억과\n높은 유사도', color: C.green, value: '≥ 0.60' },
-    { label: 'AMBIGUOUS', title: '사용자에게 질문', body: '패턴은 보이지만\n승인 또는 수정 필요', color: C.amber, value: '0.55–0.84' },
+    { label: 'AMBIGUOUS', title: '사용자에게 질문', body: '패턴은 보이지만\n승인 또는 수정 필요', color: C.amber, value: '0.55–0.59' },
     { label: 'LOW / WRONG', title: '관찰 유지', body: '실행하지 않고 추가 관찰\n틀림 피드백 시 confidence 감소', color: C.red, value: '< 0.55' },
   ];
   tiers.forEach((t, i) => {
@@ -387,7 +387,7 @@ function addStep(slide, x, y, w, num, title, body, accent) {
   const slide = pptx.addSlide({ masterName: 'MASTER_DARK' });
   addHeader(slide, '“되는 것처럼 보이는 화면”이 아니라 핵심 흐름을 검증했습니다', '10 · Validation', { accent: C.green });
   addCard(slide, 0.66, 1.58, 5.72, 2.15, { fill: '10182A', line: '2F5D4C', radius: 0.18 });
-  addMetric(slide, 0.94, 1.91, 2.22, '8 / 8', 'API 테스트', C.green);
+  addMetric(slide, 0.94, 1.91, 2.22, '16 / 16', 'PYTEST', C.green);
   slide.addShape(pptx.ShapeType.line, { x: 3.43, y: 1.96, w: 0, h: 1.42, line: { color: C.line, pt: 1 }, objectName: 'Validation metric divider' });
   addMetric(slide, 3.71, 1.91, 2.22, '38', 'SQLite 문장', C.cyan);
 
@@ -408,14 +408,14 @@ function addStep(slide, x, y, w, num, title, body, accent) {
     slide.addText(t[0], { x: x + 0.06, y: 5.08, w: 0.86, h: 0.24, fontFace: 'Aptos Mono', fontSize: 7.8, bold: true, color: t[1], align: 'center', margin: 0, objectName: `Test trace ${t[0]}` });
     if (i < trace.length - 1) addArrow(slide, x + 0.99, 5.21, 0.15, C.muted2, 1);
   });
-  slide.addText('pytest -q  →  8 passed', { x: 0.98, y: 5.85, w: 3.4, h: 0.24, fontFace: 'Aptos Mono', fontSize: 9.3, bold: true, color: C.green, margin: 0, objectName: 'Pytest result' });
+  slide.addText('pytest -q  →  16 passed', { x: 0.98, y: 5.85, w: 3.4, h: 0.24, fontFace: 'Aptos Mono', fontSize: 9.3, bold: true, color: C.green, margin: 0, objectName: 'Pytest result' });
   slide.addText('validate_sqlite.py  →  passed', { x: 4.39, y: 5.85, w: 3.32, h: 0.24, fontFace: 'Aptos Mono', fontSize: 9.3, bold: true, color: C.cyan, align: 'right', margin: 0, objectName: 'SQLite result' });
 
   addCard(slide, 8.62, 4.03, 4.04, 2.33, { fill: '281B20', line: '5B3540', radius: 0.16, shadow: false });
   slide.addText('환경 의존 미검증', { x: 8.94, y: 4.35, w: 2.22, h: 0.3, fontFace: FONT, fontSize: 14, bold: true, color: C.red, margin: 0, objectName: 'Unverified title' });
   slide.addText('• 실제 카메라 하드웨어 인식률\n• PowerPoint / Spotify OS 키 전달\n• 다중 사용자 동시성\n• 장기간 embedding drift', { x: 8.94, y: 4.91, w: 3.3, h: 1.15, fontFace: FONT, fontSize: 10.2, color: C.muted, margin: 0, breakLine: false, objectName: 'Unverified list' });
   addFooter(slide, 'API 정상·오류 경로 + SQL 외래키·제약조건 + Privacy 조건 검증');
-  addNotes(slide, '핵심 API 테스트 여덟 개와 SQLite 스키마, 시드, 대표 쿼리, 무결성 검사 38개 문장을 모두 통과했습니다. 학습 루프, 상황별 의도 분기, 잘못된 행동 피드백, 원본 프레임 미저장을 검증했습니다. 다만 실제 카메라 인식률과 OS 키 전달은 현재 컨테이너 환경에서 미검증으로 남겼습니다.');
+  addNotes(slide, '핵심 Pytest 테스트 열여섯 개와 SQLite 스키마, 시드, 대표 쿼리, 무결성 검사 38개 문장을 모두 통과했습니다. 학습 루프, 상황별 의도 분기, 잘못된 행동 피드백, 원본 프레임 미저장을 검증했습니다. 다만 실제 카메라 인식률과 OS 키 전달은 현재 컨테이너 환경에서 미검증으로 남겼습니다.');
 }
 
 // 12. Demo story

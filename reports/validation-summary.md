@@ -1,9 +1,9 @@
 # 검증 요약
 
-## API 및 학습 루프
+## Pytest 및 학습 루프
 
 ```text
-8 passed
+16 passed
 ```
 
 검증 항목:
@@ -15,8 +15,13 @@
 - 중복 Feedback 차단과 0.60 미만 Memory 자동 강등
 - Observation의 raw frame/image 입력 거부와 `frame_stored=false`
 - 지원 Context 검증과 Dashboard 현재 Context 반환
-- 최빈 Action 동률 시 Suggestion 보류
 - Suggestion Intent 수정 후 승인
+- 최빈 Action 동률 시 대기 제안 철회와 자동 실행 중단
+- Context 밖 Intent와 중복 Memory 수정 거부
+- 동일 Gesture·Context에서 활성 Memory 1개 유지
+- Feedback 수정 Intent의 Context·중복 검증
+- 기존 SQLite 스키마에 호환성 무결성 가드 설치
+- 웹캠 키 입력의 Context별 Intent 검증
 
 ## SQLite
 

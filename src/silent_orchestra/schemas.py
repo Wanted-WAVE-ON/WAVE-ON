@@ -1,20 +1,22 @@
-from __future__ import annotations
-
 from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-Activity = Literal["presentation", "music", "browser", "other"]
+Activity = Literal["presentation", "music"]
 SuggestionDecision = Literal["ACCEPTED", "REJECTED", "MODIFIED"]
 FeedbackType = Literal["CORRECT", "WRONG_ACTION", "ACCIDENTAL_GESTURE", "IGNORE"]
+
+
+class APIModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
 
 class ORMModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class UserCreate(BaseModel):
+class UserCreate(APIModel):
     name: str = Field(min_length=1, max_length=100)
     id: str | None = None
 
@@ -25,7 +27,7 @@ class UserRead(ORMModel):
     created_at: datetime
 
 
-class ContextInput(BaseModel):
+class ContextInput(APIModel):
     active_app: str = Field(min_length=1, max_length=100)
     activity: Activity
     space: str = Field(default="unspecified", max_length=100)
@@ -42,7 +44,7 @@ class ContextRead(ORMModel):
     captured_at: datetime
 
 
-class GestureInput(BaseModel):
+class GestureInput(APIModel):
     motion_type: str = Field(min_length=1, max_length=50)
     direction: str = Field(default="none", max_length=30)
     duration_ms: int = Field(default=430, ge=0, le=10_000)
@@ -130,7 +132,7 @@ class InferenceResult(BaseModel):
     execution: ExecutionRead | None = None
 
 
-class ObserveRequest(BaseModel):
+class ObserveRequest(APIModel):
     user_id: str
     context: ContextInput
     gesture: GestureInput
@@ -143,7 +145,7 @@ class ObserveResponse(BaseModel):
     inference: InferenceResult
 
 
-class TeachRequest(BaseModel):
+class TeachRequest(APIModel):
     user_id: str
     observation_id: str
     action_type: str = Field(min_length=1, max_length=64)
@@ -159,12 +161,12 @@ class TeachResponse(BaseModel):
     progress_required: int
 
 
-class SuggestionResponseRequest(BaseModel):
+class SuggestionResponseRequest(APIModel):
     decision: SuggestionDecision
     modified_intent: str | None = Field(default=None, max_length=64)
 
 
-class FeedbackCreate(BaseModel):
+class FeedbackCreate(APIModel):
     user_id: str
     feedback_type: FeedbackType
     corrected_intent: str | None = Field(default=None, max_length=64)

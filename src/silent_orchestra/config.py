@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -13,7 +11,7 @@ class Settings(BaseSettings):
     api_prefix: str = "/api/v1"
     database_url: str = f"sqlite:///{DEFAULT_DATABASE}"
     suggestion_threshold: int = 3
-    auto_execution_threshold: float = 0.85
+    auto_execution_threshold: float = 0.60
     enable_os_actions: bool = False
     allowed_origins: str = "http://127.0.0.1:8000,http://localhost:8000"
 

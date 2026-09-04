@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from sqlalchemy.orm import Session
 
 from ..models import User
@@ -14,7 +12,6 @@ def ensure_demo_user(db: Session) -> User:
         user = User(id=DEMO_USER_ID, name=DEMO_USER_NAME)
         db.add(user)
         db.commit()
-        db.refresh(user)
     return user
 
 

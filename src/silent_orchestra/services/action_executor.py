@@ -1,16 +1,4 @@
-from __future__ import annotations
-
-from dataclasses import dataclass
-from typing import Any
-
 from ..config import settings
-
-
-@dataclass(slots=True)
-class ExecutionResult:
-    mode: str
-    status: str
-    error_message: str | None = None
 
 
 KEY_MAP = {
@@ -28,22 +16,18 @@ KEY_MAP = {
 }
 
 
-def execute_action(intent: str, _target: str, _parameters: dict[str, Any]) -> ExecutionResult:
+def execute_action(intent: str) -> tuple[str, str, str | None]:
     if not settings.enable_os_actions:
-        return ExecutionResult(mode="DRY_RUN", status="SIMULATED")
+        return "DRY_RUN", "SIMULATED", None
 
     key = KEY_MAP.get(intent)
     if key is None:
-        return ExecutionResult(
-            mode="OS",
-            status="FAILED",
-            error_message=f"No operating-system key mapping for intent: {intent}",
-        )
+        return "OS", "FAILED", f"No operating-system key mapping for intent: {intent}"
 
     try:
         import pyautogui  # type: ignore[import-not-found]
 
         pyautogui.press(key)
-        return ExecutionResult(mode="OS", status="SUCCEEDED")
+        return "OS", "SUCCEEDED", None
     except Exception as exc:  # pragma: no cover - hardware/OS dependent
-        return ExecutionResult(mode="OS", status="FAILED", error_message=str(exc))
+        return "OS", "FAILED", str(exc)

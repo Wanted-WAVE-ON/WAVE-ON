@@ -26,31 +26,19 @@ pptx.defineSlideMaster({
   objects: [],
   slideNumber: { x: 12.42, y: 7.08, w: 0.45, h: 0.18, fontFace: 'Noto Sans CJK KR', fontSize: 9, color: '5D667B', align: 'right', margin: 0 },
 });
-pptx.defineSlideMaster({
-  title: 'MASTER_LIGHT',
-  background: { color: 'F7F8FC' },
-  objects: [],
-  slideNumber: { x: 12.42, y: 7.08, w: 0.45, h: 0.18, fontFace: 'Noto Sans CJK KR', fontSize: 9, color: '8C94A6', align: 'right', margin: 0 },
-});
-
 const C = {
   bg: '070A14',
-  bg2: '0C1020',
   card: '11172A',
-  card2: '151C33',
   line: '26314D',
   text: 'F5F7FF',
   muted: '9AA4BD',
   muted2: '6E7891',
   cyan: '67DDF2',
-  cyan2: '20B7D7',
   violet: '9C86FF',
-  violet2: '6E5AE6',
   green: '75E6B3',
   amber: 'F2C96D',
   red: 'FF8FA3',
   white: 'FFFFFF',
-  ink: '182033',
 };
 const FONT = 'Noto Sans CJK KR';
 const ROOT = path.resolve(__dirname, '..');
@@ -62,60 +50,49 @@ const IMG = {
   loop: path.join(ROOT, 'docs', 'diagrams', 'learning-loop.png'),
 };
 
-function addBg(slide, { light = false, glow = true } = {}) {
-  slide.background = { color: light ? 'F7F8FC' : C.bg };
-  // Background is intentionally kept within slide bounds for reliable rendering.
-  // Accent colors are carried by cards, labels, and diagrams rather than clipped shapes.
-}
-
-function addHeader(slide, title, kicker, { light = false, accent = C.cyan } = {}) {
-  const text = light ? C.ink : C.text;
-  const muted = light ? '6E7891' : C.muted;
+function addHeader(slide, title, kicker, { accent = C.cyan } = {}) {
   slide.addText(kicker.toUpperCase(), { x: 0.65, y: 0.34, w: 5.7, h: 0.22, fontFace: FONT, fontSize: 9.2, bold: true, charSpacing: 1.6, color: accent, margin: 0, breakLine: false, objectName: 'Section kicker' });
-  slide.addText(title, { x: 0.65, y: 0.62, w: 11.9, h: 0.58, fontFace: FONT, fontSize: 26, bold: true, color: text, margin: 0, breakLine: false, objectName: 'Slide title' });
-  slide.addShape(pptx.ShapeType.line, { x: 0.65, y: 1.28, w: 12.0, h: 0, line: { color: light ? 'DFE3EC' : C.line, pt: 1 }, objectName: 'Header divider' });
-  slide.addText('SILENTORCHESTRA 2.0', { x: 10.54, y: 0.36, w: 2.12, h: 0.18, fontFace: FONT, fontSize: 8, bold: true, color: muted, align: 'right', margin: 0, charSpacing: 1.0, objectName: 'Brand label' });
+  slide.addText(title, { x: 0.65, y: 0.62, w: 11.9, h: 0.58, fontFace: FONT, fontSize: 26, bold: true, color: C.text, margin: 0, breakLine: false, objectName: 'Slide title' });
+  slide.addShape(pptx.ShapeType.line, { x: 0.65, y: 1.28, w: 12.0, h: 0, line: { color: C.line, pt: 1 }, objectName: 'Header divider' });
+  slide.addText('SILENTORCHESTRA 2.0', { x: 10.54, y: 0.36, w: 2.12, h: 0.18, fontFace: FONT, fontSize: 8, bold: true, color: C.muted, align: 'right', margin: 0, charSpacing: 1.0, objectName: 'Brand label' });
 }
 
-function addFooter(slide, text, { light = false } = {}) {
-  slide.addText(text, { x: 0.65, y: 7.05, w: 8.5, h: 0.2, fontFace: FONT, fontSize: 8.5, color: light ? '8A93A5' : C.muted2, margin: 0, objectName: 'Footer note' });
+function addFooter(slide, text) {
+  slide.addText(text, { x: 0.65, y: 7.05, w: 8.5, h: 0.2, fontFace: FONT, fontSize: 8.5, color: C.muted2, margin: 0, objectName: 'Footer note' });
 }
 
-function addPill(slide, text, x, y, w, { fill = C.card2, color = C.cyan, border = C.line, fontSize = 9.5, light = false } = {}) {
+function addPill(slide, text, x, y, w, { fill, color, border, fontSize }) {
   slide.addShape(pptx.ShapeType.roundRect, { x, y, w, h: 0.34, rectRadius: 0.08, fill: { color: fill }, line: { color: border, pt: 1 }, radius: 0.08, objectName: `Pill ${text}` });
-  slide.addText(text, { x: x + 0.09, y: y + 0.075, w: w - 0.18, h: 0.17, fontFace: FONT, fontSize, bold: true, color: light ? C.ink : color, align: 'center', valign: 'mid', margin: 0, objectName: `Pill label ${text}` });
+  slide.addText(text, { x: x + 0.09, y: y + 0.075, w: w - 0.18, h: 0.17, fontFace: FONT, fontSize, bold: true, color, align: 'center', valign: 'mid', margin: 0, objectName: `Pill label ${text}` });
 }
 
-function addCard(slide, x, y, w, h, { fill = C.card, line = C.line, radius = 0.14, shadow = true, transparency = 0 } = {}) {
+function addCard(slide, x, y, w, h, { fill = C.card, line = C.line, radius = 0.14, shadow = true } = {}) {
   slide.addShape(pptx.ShapeType.roundRect, {
     x, y, w, h,
     rectRadius: radius,
-    fill: { color: fill, transparency },
+    fill: { color: fill },
     line: { color: line, pt: 1 },
     shadow: shadow ? safeOuterShadow('000000', 0.22, 45, 2, 1) : undefined,
     objectName: 'Card',
   });
 }
 
-function addMetric(slide, x, y, w, value, label, { accent = C.cyan, light = false } = {}) {
-  const text = light ? C.ink : C.text;
-  const muted = light ? '687185' : C.muted;
+function addMetric(slide, x, y, w, value, label, accent) {
   slide.addText(value, { x, y, w, h: 0.72, fontFace: FONT, fontSize: 36, bold: true, color: accent, align: 'center', margin: 0, objectName: `Metric ${label}` });
-  slide.addText(label, { x, y: y + 0.78, w, h: 0.32, fontFace: FONT, fontSize: 11, bold: true, color: text, align: 'center', margin: 0, objectName: `Metric label ${label}` });
-  slide.addText('검증 완료', { x, y: y + 1.11, w, h: 0.22, fontFace: FONT, fontSize: 8.6, color: muted, align: 'center', margin: 0, objectName: `Metric state ${label}` });
+  slide.addText(label, { x, y: y + 0.78, w, h: 0.32, fontFace: FONT, fontSize: 11, bold: true, color: C.text, align: 'center', margin: 0, objectName: `Metric label ${label}` });
+  slide.addText('검증 완료', { x, y: y + 1.11, w, h: 0.22, fontFace: FONT, fontSize: 8.6, color: C.muted, align: 'center', margin: 0, objectName: `Metric state ${label}` });
 }
 
-function addCheckRow(slide, x, y, text, { color = C.green, textColor = C.text, size = 10.5 } = {}) {
-  slide.addText('✓', { x, y: y - 0.005, w: 0.18, h: 0.22, fontFace: FONT, fontSize: 12, bold: true, color, align: 'center', margin: 0, objectName: 'Check icon' });
-  slide.addText(text, { x: x + 0.29, y, w: 4.8, h: 0.24, fontFace: FONT, fontSize: size, color: textColor, margin: 0, breakLine: false, objectName: `Check row ${text}` });
+function addCheckRow(slide, x, y, text) {
+  slide.addText('✓', { x, y: y - 0.005, w: 0.18, h: 0.22, fontFace: FONT, fontSize: 12, bold: true, color: C.green, align: 'center', margin: 0, objectName: 'Check icon' });
+  slide.addText(text, { x: x + 0.29, y, w: 4.8, h: 0.24, fontFace: FONT, fontSize: 10.5, color: C.text, margin: 0, breakLine: false, objectName: `Check row ${text}` });
 }
 
-function addNotes(slide, script, sources = []) {
-  const src = sources.length ? sources : ['User-provided SilentOrchestra 2.0 project specification.', 'Local MVP implementation and validation artifacts in this package.'];
-  slide.addNotes(`${script}\n\n[Sources]\n${src.map(s => `- ${s}`).join('\n')}`);
+function addNotes(slide, script) {
+  slide.addNotes(`${script}\n\n[Sources]\n- User-provided SilentOrchestra 2.0 project specification.\n- Local MVP implementation and validation artifacts in this package.`);
 }
 
-function addArrow(slide, x, y, w, color = C.muted2, lineWidth = 1.5) {
+function addArrow(slide, x, y, w, color, lineWidth) {
   slide.addShape(pptx.ShapeType.line, { x, y, w, h: 0, line: { color, pt: lineWidth, beginArrowType: 'none', endArrowType: 'triangle' }, objectName: 'Flow arrow' });
 }
 
@@ -130,7 +107,6 @@ function addStep(slide, x, y, w, num, title, body, accent) {
 // 1. Cover
 {
   const slide = pptx.addSlide({ masterName: 'MASTER_DARK' });
-  addBg(slide, { glow: true });
   addPill(slide, 'PERSONALIZED SPATIAL AGENT', 0.72, 0.56, 2.92, { fill: '101A2D', color: C.cyan, border: '26415B', fontSize: 9.2 });
   slide.addText('SilentOrchestra 2.0', { x: 0.72, y: 1.3, w: 6.4, h: 0.72, fontFace: FONT, fontSize: 34, bold: true, color: C.text, margin: 0, objectName: 'Cover title' });
   slide.addText('AI에게 제스처를 가르치는 것이 아니라,\nAI가 나의 몸짓 언어를 배웁니다.', { x: 0.72, y: 2.24, w: 5.88, h: 1.34, fontFace: FONT, fontSize: 24, bold: true, color: C.text, breakLine: false, margin: 0, objectName: 'Cover statement' });
@@ -146,7 +122,6 @@ function addStep(slide, x, y, w, num, title, body, accent) {
 // 2. Problem
 {
   const slide = pptx.addSlide({ masterName: 'MASTER_DARK' });
-  addBg(slide, { glow: false });
   addHeader(slide, '제스처 인터페이스의 문제는 인식률만이 아닙니다', '01 · Problem');
   slide.addText('기존 시스템은 사용자의 몸짓을 배우지 않고, 사용자가 시스템의 명령어를 외우게 합니다.', { x: 0.66, y: 1.52, w: 11.8, h: 0.42, fontFace: FONT, fontSize: 17, bold: true, color: C.text, margin: 0, objectName: 'Problem lead' });
 
@@ -179,7 +154,6 @@ function addStep(slide, x, y, w, num, title, body, accent) {
 // 3. Solution
 {
   const slide = pptx.addSlide({ masterName: 'MASTER_DARK' });
-  addBg(slide, { glow: true });
   addHeader(slide, '사용자가 설정하지 않아도, Agent가 먼저 패턴을 발견합니다', '02 · Solution', { accent: C.violet });
   addCard(slide, 0.66, 1.58, 4.05, 4.9, { fill: '0D1324', line: '35406A', radius: 0.2 });
   slide.addText('SilentOrchestra의 판단식', { x: 0.97, y: 1.92, w: 3.35, h: 0.35, fontFace: FONT, fontSize: 13, bold: true, color: C.muted, margin: 0, objectName: 'Equation label' });
@@ -217,7 +191,6 @@ function addStep(slide, x, y, w, num, title, body, accent) {
 // 4. Learning UX
 {
   const slide = pptx.addSlide({ masterName: 'MASTER_DARK' });
-  addBg(slide, { glow: false });
   addHeader(slide, '핵심 경험은 “등록”이 아니라 “학습 과정”입니다', '03 · Learning UX', { accent: C.amber });
   addCard(slide, 0.66, 1.52, 8.34, 5.2, { fill: '0C1120', line: '2B3554', radius: 0.17 });
   slide.addImage({ path: IMG.learning, ...imageSizingContain(IMG.learning, 0.86, 1.7, 7.94, 4.84), objectName: 'Learning UX screenshot' });
@@ -235,7 +208,6 @@ function addStep(slide, x, y, w, num, title, body, accent) {
 // 5. Context reasoning
 {
   const slide = pptx.addSlide({ masterName: 'MASTER_DARK' });
-  addBg(slide, { glow: true });
   addHeader(slide, '같은 몸짓도 상황이 바뀌면 다른 언어가 됩니다', '04 · Context Reasoning', { accent: C.violet });
   slide.addText('Gesture ≠ Command', { x: 0.66, y: 1.56, w: 3.1, h: 0.5, fontFace: FONT, fontSize: 22, bold: true, color: C.red, margin: 0, objectName: 'Gesture not command' });
   slide.addText('Gesture + Context + User = Intent', { x: 3.92, y: 1.56, w: 5.15, h: 0.5, fontFace: FONT, fontSize: 22, bold: true, color: C.green, margin: 0, objectName: 'Context equation' });
@@ -272,27 +244,25 @@ function addStep(slide, x, y, w, num, title, body, accent) {
 // 6. Architecture
 {
   const slide = pptx.addSlide({ masterName: 'MASTER_DARK' });
-  addBg(slide, { glow: false });
   addHeader(slide, '원본 영상이 아니라 “행동의 특징”부터 시스템에 들어옵니다', '05 · Architecture', { accent: C.cyan });
   addPill(slide, 'RAW FRAME DISCARDED', 0.66, 1.5, 2.35, { fill: '341823', color: C.red, border: '653043', fontSize: 8.8 });
   addPill(slide, 'LOCAL-FIRST MEMORY', 10.46, 1.5, 2.2, { fill: '153028', color: C.green, border: '2D624F', fontSize: 8.8 });
   addCard(slide, 0.66, 1.98, 12.0, 4.78, { fill: C.white, line: 'D8DEEA', radius: 0.14, shadow: true });
   slide.addImage({ path: IMG.architecture, ...imageSizingContain(IMG.architecture, 0.92, 2.18, 11.48, 4.36), objectName: 'System architecture diagram' });
-  addFooter(slide, 'Perception → Context Engine → Agent → Memory → Action Executor', { light: false });
+  addFooter(slide, 'Perception → Context Engine → Agent → Memory → Action Executor');
   addNotes(slide, '카메라 입력은 Motion Feature Extractor에서 Optical Flow 특징으로 바뀌고 원본 프레임은 즉시 폐기됩니다. 이후 Gesture Encoder, Context Engine, Observation Engine이 학습 근거를 만들고, Pattern Learning과 Intent Reasoner가 제안 또는 실행을 결정합니다. 피드백은 다시 Personal Gesture Memory에 반영됩니다.');
 }
 
 // 7. Agent logic
 {
   const slide = pptx.addSlide({ masterName: 'MASTER_DARK' });
-  addBg(slide, { glow: true });
   addHeader(slide, 'Agent는 확신도에 따라 “실행”과 “질문”을 나눕니다', '06 · Agent Logic', { accent: C.amber });
   addCard(slide, 0.66, 1.58, 12.0, 1.5, { fill: C.white, line: 'DCE1EC', radius: 0.14, shadow: false });
   slide.addImage({ path: IMG.loop, ...imageSizingContain(IMG.loop, 0.89, 1.83, 11.54, 0.98), objectName: 'Learning loop diagram' });
 
   const tiers = [
-    { label: 'HIGH', title: '자동 실행', body: '활성화된 개인 기억과\n높은 유사도', color: C.green, value: '≥ 0.85' },
-    { label: 'AMBIGUOUS', title: '사용자에게 질문', body: '패턴은 보이지만\n승인 또는 수정 필요', color: C.amber, value: '0.55–0.84' },
+    { label: 'HIGH', title: '자동 실행', body: '활성화된 개인 기억과\n높은 유사도', color: C.green, value: '≥ 0.60' },
+    { label: 'AMBIGUOUS', title: '사용자에게 질문', body: '패턴은 보이지만\n승인 또는 수정 필요', color: C.amber, value: '0.55–0.59' },
     { label: 'LOW / WRONG', title: '관찰 유지', body: '실행하지 않고 추가 관찰\n틀림 피드백 시 confidence 감소', color: C.red, value: '< 0.55' },
   ];
   tiers.forEach((t, i) => {
@@ -312,7 +282,6 @@ function addStep(slide, x, y, w, num, title, body, accent) {
 // 8. ERD
 {
   const slide = pptx.addSlide({ masterName: 'MASTER_DARK' });
-  addBg(slide, { glow: false });
   addHeader(slide, 'DB도 명령 매핑이 아니라 학습 이력을 저장합니다', '07 · ERD & SQL', { accent: C.violet });
   addCard(slide, 0.66, 1.52, 9.62, 5.18, { fill: C.white, line: 'DCE1EA', radius: 0.14, shadow: true });
   slide.addImage({ path: IMG.erd, ...imageSizingContain(IMG.erd, 0.86, 1.71, 9.22, 4.8), objectName: 'ERD diagram' });
@@ -334,7 +303,6 @@ function addStep(slide, x, y, w, num, title, body, accent) {
 // 9. Privacy
 {
   const slide = pptx.addSlide({ masterName: 'MASTER_DARK' });
-  addBg(slide, { glow: true });
   addHeader(slide, 'Privacy는 문구가 아니라 데이터 구조로 증명합니다', '08 · Privacy by Design', { accent: C.green });
   addCard(slide, 0.66, 1.58, 6.32, 4.88, { fill: '0E1424', line: '2C3854', radius: 0.18 });
   slide.addText('CAMERA DATA FLOW', { x: 0.98, y: 1.92, w: 2.2, h: 0.22, fontFace: FONT, fontSize: 9, bold: true, color: C.cyan, charSpacing: 1.4, margin: 0, objectName: 'Privacy flow label' });
@@ -377,7 +345,6 @@ function addStep(slide, x, y, w, num, title, body, accent) {
 // 10. MVP implementation
 {
   const slide = pptx.addSlide({ masterName: 'MASTER_DARK' });
-  addBg(slide, { glow: false });
   addHeader(slide, '핵심 학습 루프를 실제 실행 가능한 MVP로 구현했습니다', '09 · Working MVP', { accent: C.cyan });
   addCard(slide, 0.66, 1.52, 7.22, 5.15, { fill: '0C1120', line: '2B3554', radius: 0.17 });
   slide.addImage({ path: IMG.execution, ...imageSizingContain(IMG.execution, 0.84, 1.72, 6.86, 4.78), objectName: 'Execution UX screenshot' });
@@ -418,12 +385,11 @@ function addStep(slide, x, y, w, num, title, body, accent) {
 // 11. Validation
 {
   const slide = pptx.addSlide({ masterName: 'MASTER_DARK' });
-  addBg(slide, { glow: true });
   addHeader(slide, '“되는 것처럼 보이는 화면”이 아니라 핵심 흐름을 검증했습니다', '10 · Validation', { accent: C.green });
   addCard(slide, 0.66, 1.58, 5.72, 2.15, { fill: '10182A', line: '2F5D4C', radius: 0.18 });
-  addMetric(slide, 0.94, 1.91, 2.22, '5 / 5', 'API 테스트', { accent: C.green });
+  addMetric(slide, 0.94, 1.91, 2.22, '16 / 16', 'PYTEST', C.green);
   slide.addShape(pptx.ShapeType.line, { x: 3.43, y: 1.96, w: 0, h: 1.42, line: { color: C.line, pt: 1 }, objectName: 'Validation metric divider' });
-  addMetric(slide, 3.71, 1.91, 2.22, '38', 'SQLite 문장', { accent: C.cyan });
+  addMetric(slide, 3.71, 1.91, 2.22, '38', 'SQLite 문장', C.cyan);
 
   addCard(slide, 6.67, 1.58, 5.99, 2.15, { fill: C.card, line: '34405C', radius: 0.18 });
   slide.addText('검증한 핵심 시나리오', { x: 7.0, y: 1.91, w: 2.65, h: 0.3, fontFace: FONT, fontSize: 15, bold: true, color: C.text, margin: 0, objectName: 'Validation scenario title' });
@@ -442,20 +408,19 @@ function addStep(slide, x, y, w, num, title, body, accent) {
     slide.addText(t[0], { x: x + 0.06, y: 5.08, w: 0.86, h: 0.24, fontFace: 'Aptos Mono', fontSize: 7.8, bold: true, color: t[1], align: 'center', margin: 0, objectName: `Test trace ${t[0]}` });
     if (i < trace.length - 1) addArrow(slide, x + 0.99, 5.21, 0.15, C.muted2, 1);
   });
-  slide.addText('pytest -q  →  5 passed', { x: 0.98, y: 5.85, w: 3.4, h: 0.24, fontFace: 'Aptos Mono', fontSize: 9.3, bold: true, color: C.green, margin: 0, objectName: 'Pytest result' });
+  slide.addText('pytest -q  →  16 passed', { x: 0.98, y: 5.85, w: 3.4, h: 0.24, fontFace: 'Aptos Mono', fontSize: 9.3, bold: true, color: C.green, margin: 0, objectName: 'Pytest result' });
   slide.addText('validate_sqlite.py  →  passed', { x: 4.39, y: 5.85, w: 3.32, h: 0.24, fontFace: 'Aptos Mono', fontSize: 9.3, bold: true, color: C.cyan, align: 'right', margin: 0, objectName: 'SQLite result' });
 
   addCard(slide, 8.62, 4.03, 4.04, 2.33, { fill: '281B20', line: '5B3540', radius: 0.16, shadow: false });
   slide.addText('환경 의존 미검증', { x: 8.94, y: 4.35, w: 2.22, h: 0.3, fontFace: FONT, fontSize: 14, bold: true, color: C.red, margin: 0, objectName: 'Unverified title' });
   slide.addText('• 실제 카메라 하드웨어 인식률\n• PowerPoint / Spotify OS 키 전달\n• 다중 사용자 동시성\n• 장기간 embedding drift', { x: 8.94, y: 4.91, w: 3.3, h: 1.15, fontFace: FONT, fontSize: 10.2, color: C.muted, margin: 0, breakLine: false, objectName: 'Unverified list' });
   addFooter(slide, 'API 정상·오류 경로 + SQL 외래키·제약조건 + Privacy 조건 검증');
-  addNotes(slide, '핵심 API 테스트 다섯 개와 SQLite 스키마, 시드, 대표 쿼리, 무결성 검사 38개 문장을 모두 통과했습니다. 학습 루프, 상황별 의도 분기, 잘못된 행동 피드백, 원본 프레임 미저장을 검증했습니다. 다만 실제 카메라 인식률과 OS 키 전달은 현재 컨테이너 환경에서 미검증으로 남겼습니다.');
+  addNotes(slide, '핵심 Pytest 테스트 열여섯 개와 SQLite 스키마, 시드, 대표 쿼리, 무결성 검사 38개 문장을 모두 통과했습니다. 학습 루프, 상황별 의도 분기, 잘못된 행동 피드백, 원본 프레임 미저장을 검증했습니다. 다만 실제 카메라 인식률과 OS 키 전달은 현재 컨테이너 환경에서 미검증으로 남겼습니다.');
 }
 
 // 12. Demo story
 {
   const slide = pptx.addSlide({ masterName: 'MASTER_DARK' });
-  addBg(slide, { glow: false });
   addHeader(slide, '90초 데모: Agent가 “배우는 순간”을 보여줍니다', '11 · Demo Story', { accent: C.amber });
   const phases = [
     ['0–15초', '발표 시작', 'Presentation Context 확인', C.cyan],
@@ -492,7 +457,6 @@ function addStep(slide, x, y, w, num, title, body, accent) {
 // 13. Closing
 {
   const slide = pptx.addSlide({ masterName: 'MASTER_DARK' });
-  addBg(slide, { glow: true });
   addPill(slide, 'FROM FIXED COMMANDS TO ADAPTIVE INTERFACES', 0.72, 0.58, 3.75, { fill: '141B2E', color: C.cyan, border: '2D3D5A', fontSize: 8.8 });
   slide.addText('사용자가 인터페이스에 적응하던 시대에서,', { x: 0.72, y: 1.46, w: 6.25, h: 0.56, fontFace: FONT, fontSize: 23, bold: true, color: C.muted, margin: 0, objectName: 'Closing line 1' });
   slide.addText('인터페이스가 사용자에게\n적응하는 시대로.', { x: 0.72, y: 2.13, w: 6.25, h: 1.06, fontFace: FONT, fontSize: 29, bold: true, color: C.text, margin: 0, objectName: 'Closing line 2' });

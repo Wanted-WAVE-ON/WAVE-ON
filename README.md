@@ -76,7 +76,7 @@ python scripts/webcam_gesture_client.py --activity presentation
 
 - `N`: 다음 행동 연결
 - `B`: 이전 행동 연결
-- `Space`: 재생/일시정지 연결
+- `Space`: Music 맥락에서 재생/일시정지 연결
 - `Q`: 종료
 
 발표 현장에서는 하드웨어 변수 때문에 버튼 기반 Stable Simulation 경로를 권장합니다.
@@ -98,13 +98,14 @@ python -m pip install pyautogui
 ## 검증
 
 ```bash
+python -m pip install -r requirements-dev.txt
 python -m pytest -q
 python scripts/validate_sqlite.py --schema sql/schema.sql --seed sql/seed.sql --queries sql/queries.sql --tests sql/tests.sql --report sql/validation-report.json
 ```
 
 현재 검증 상태:
 
-- Pytest: 5개 테스트 통과
+- Pytest: 16개 테스트 통과
 - SQLite: 38개 statement 검증 통과
 - 원본 프레임 저장 0건 조건 통과
 - 동일 제스처의 Presentation/Music 맥락 분기 통과

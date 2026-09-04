@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python -m pytest
+      - run: >-
+          python scripts/validate_sqlite.py
+          --schema sql/schema.sql
+          --seed sql/seed.sql
+          --queries sql/queries.sql
+          --tests sql/tests.sql
+          --report /tmp/sqlite-validation.json

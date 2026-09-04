@@ -1,10 +1,7 @@
-from __future__ import annotations
-
-from datetime import datetime
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from ..config import settings
@@ -20,6 +17,7 @@ from ..models import (
     User,
 )
 from ..schemas import (
+    ContextRead,
     FeedbackCreate,
     FeedbackResponse,
     ObserveRequest,
@@ -38,11 +36,9 @@ from ..services.pattern_learning import record_user_action, respond_to_suggestio
 router = APIRouter(tags=["agent"])
 
 
-def _ensure_user(db: Session, user_id: str) -> User:
-    user = db.get(User, user_id)
-    if user is None:
+def _ensure_user(db: Session, user_id: str) -> None:
+    if db.get(User, user_id) is None:
         raise HTTPException(status_code=404, detail="User not found")
-    return user
 
 
 @router.post("/observe", response_model=ObserveResponse)
@@ -74,8 +70,6 @@ def observe(payload: ObserveRequest, db: Session = Depends(get_db)) -> dict:
     )
     db.add_all([context, observation])
     db.commit()
-    db.refresh(context)
-    db.refresh(observation)
 
     inference = (
         infer_intent(db, observation, context)
@@ -146,15 +140,23 @@ def respond_suggestion(
 
 
 @router.get("/memories", response_model=list[PatternRead])
-def list_memories(user_id: str, db: Session = Depends(get_db)) -> list[GesturePattern]:
+def list_memories(
+    user_id: str,
+    gesture_key: str | None = None,
+    context_scope: str | None = None,
+    db: Session = Depends(get_db),
+) -> list[GesturePattern]:
     _ensure_user(db, user_id)
-    return list(
-        db.scalars(
-            select(GesturePattern)
-            .where(GesturePattern.user_id == user_id, GesturePattern.status == "ACTIVE")
-            .order_by(desc(GesturePattern.updated_at))
-        ).all()
+    stmt = select(GesturePattern).where(
+        GesturePattern.user_id == user_id,
+        GesturePattern.status == "ACTIVE",
+        GesturePattern.confidence >= settings.auto_execution_threshold,
     )
+    if gesture_key:
+        stmt = stmt.where(GesturePattern.gesture_key == gesture_key)
+    if context_scope:
+        stmt = stmt.where(GesturePattern.context_scope == context_scope)
+    return list(db.scalars(stmt.order_by(desc(GesturePattern.updated_at))).all())
 
 
 @router.post("/executions/{execution_id}/feedback", response_model=FeedbackResponse)
@@ -182,6 +184,12 @@ def submit_feedback(
 @router.get("/dashboard")
 def dashboard(user_id: str, db: Session = Depends(get_db)) -> dict:
     _ensure_user(db, user_id)
+    current_context = db.scalar(
+        select(Context)
+        .where(Context.user_id == user_id)
+        .order_by(desc(Context.captured_at))
+        .limit(1)
+    )
     memories = db.scalars(
         select(GesturePattern)
         .where(GesturePattern.user_id == user_id, GesturePattern.status == "ACTIVE")
@@ -215,43 +223,50 @@ def dashboard(user_id: str, db: Session = Depends(get_db)) -> dict:
         .order_by(desc(Execution.executed_at))
         .limit(8)
     ).all()
-    feedback_count = len(
-        db.scalars(select(Feedback).where(Feedback.user_id == user_id)).all()
-    )
+    observation_count = db.scalar(
+        select(func.count(GestureObservation.id)).where(GestureObservation.user_id == user_id)
+    ) or 0
+    feedback_count = db.scalar(
+        select(func.count(Feedback.id)).where(Feedback.user_id == user_id)
+    ) or 0
 
-    events: list[dict] = []
-    for item in observations:
-        events.append(
-            {
-                "time": item.detected_at,
-                "type": "observation",
-                "title": f"{item.motion_type} / {item.direction}",
-                "detail": "원본 프레임은 저장하지 않고 특징 벡터만 기록",
-            }
-        )
-    for item in actions:
-        events.append(
-            {
-                "time": item.executed_at,
-                "type": "action",
-                "title": item.action_type,
-                "detail": f"사용자 후속 행동 / {item.target}",
-            }
-        )
-    for item in executions:
-        events.append(
-            {
-                "time": item.executed_at,
-                "type": "execution",
-                "title": item.intent,
-                "detail": f"Agent {item.status} / confidence {item.confidence:.0%}",
-            }
-        )
+    events = [
+        {
+            "time": item.detected_at,
+            "type": "observation",
+            "title": f"{item.motion_type} / {item.direction}",
+            "detail": "원본 프레임은 저장하지 않고 특징 벡터만 기록",
+        }
+        for item in observations
+    ]
+    events += [
+        {
+            "time": item.executed_at,
+            "type": "action",
+            "title": item.action_type,
+            "detail": f"사용자 후속 행동 / {item.target}",
+        }
+        for item in actions
+    ]
+    events += [
+        {
+            "time": item.executed_at,
+            "type": "execution",
+            "title": item.intent,
+            "detail": f"Agent {item.status} / confidence {item.confidence:.0%}",
+        }
+        for item in executions
+    ]
     events.sort(key=lambda event: event["time"], reverse=True)
 
     return {
+        "context": (
+            ContextRead.model_validate(current_context).model_dump(mode="json")
+            if current_context
+            else None
+        ),
         "counts": {
-            "observations": len(db.scalars(select(GestureObservation).where(GestureObservation.user_id == user_id)).all()),
+            "observations": observation_count,
             "learned_memories": len(memories),
             "pending_suggestions": len(suggestions),
             "feedback": feedback_count,
@@ -260,10 +275,7 @@ def dashboard(user_id: str, db: Session = Depends(get_db)) -> dict:
         "candidates": [PatternRead.model_validate(item).model_dump(mode="json") for item in candidates],
         "suggestions": [SuggestionRead.model_validate(item).model_dump(mode="json") for item in suggestions],
         "events": [
-            {
-                **event,
-                "time": event["time"].isoformat() if isinstance(event["time"], datetime) else event["time"],
-            }
+            {**event, "time": event["time"].isoformat()}
             for event in events[:12]
         ],
         "threshold": settings.suggestion_threshold,

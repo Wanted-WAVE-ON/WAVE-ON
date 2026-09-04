@@ -1,11 +1,7 @@
-from __future__ import annotations
-
 import argparse
 import time
 from typing import Any
 
-import cv2
-import numpy as np
 import requests
 
 
@@ -20,12 +16,15 @@ def action_for_key(key: int, activity: str) -> tuple[str, str] | None:
         return ("NEXT_SLIDE", "powerpoint") if activity == "presentation" else ("NEXT_TRACK", "media_player")
     if key == ord("b"):
         return ("PREVIOUS_SLIDE", "powerpoint") if activity == "presentation" else ("PREVIOUS_TRACK", "media_player")
-    if key == ord(" "):
+    if key == ord(" ") and activity == "music":
         return ("TOGGLE_PLAYBACK", "media_player")
     return None
 
 
 def main() -> int:
+    import cv2
+    import numpy as np
+
     parser = argparse.ArgumentParser(description="Local optical-flow gesture client")
     parser.add_argument("--api-url", default="http://127.0.0.1:8000/api/v1")
     parser.add_argument("--user-id", default="demo-user")
@@ -39,6 +38,10 @@ def main() -> int:
     args = parser.parse_args()
 
     active_app = args.active_app or ("PowerPoint" if args.activity == "presentation" else "Spotify")
+    teaching_keys = "N/B/Space" if args.activity == "music" else "N/B"
+    key_help = "Q quit | N next | B previous"
+    if args.activity == "music":
+        key_help += " | Space play/pause"
     post_json(f"{args.api_url}/demo/bootstrap", {})
 
     capture = cv2.VideoCapture(args.camera)
@@ -112,7 +115,7 @@ def main() -> int:
                     if inference["matched"]:
                         overlay = f"{direction} -> {inference['intent']} ({inference['confidence']:.0%})"
                     else:
-                        overlay = f"Observed {direction}. Press N/B/Space to teach the next action."
+                        overlay = f"Observed {direction}. Press {teaching_keys} to teach the next action."
                     print(overlay)
                     last_detection = now
 
@@ -120,7 +123,7 @@ def main() -> int:
             cv2.rectangle(frame, (x1, y1), (x2, y2), (104, 224, 255), 2)
             cv2.putText(frame, overlay[:85], (24, 38), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (255, 255, 255), 2)
             cv2.putText(frame, f"detections: {detection_count}", (24, 66), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (104, 224, 255), 2)
-            cv2.putText(frame, "Q quit | N next | B previous | Space play/pause", (24, height - 24), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (220, 220, 220), 1)
+            cv2.putText(frame, key_help, (24, height - 24), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (220, 220, 220), 1)
             cv2.imshow("SilentOrchestra 2.0 - Local Optical Flow", frame)
 
             key = cv2.waitKey(1) & 0xFF

@@ -32,7 +32,10 @@ def main() -> int:
     parser.add_argument("--activity", choices=["presentation", "music"], default="presentation")
     parser.add_argument("--active-app", default=None)
     parser.add_argument("--camera", type=int, default=0)
-    parser.add_argument("--threshold", type=float, default=1.4)
+    parser.add_argument("--threshold", type=float, default=1.0,
+                        help="per-pixel horizontal flow magnitude that counts as motion")
+    parser.add_argument("--min-motion-ratio", type=float, default=0.01,
+                        help="fraction of ROI pixels in motion required to trigger a detection")
     args = parser.parse_args()
 
     active_app = args.active_app or ("PowerPoint" if args.activity == "presentation" else "Spotify")
@@ -44,6 +47,7 @@ def main() -> int:
 
     previous_gray = None
     last_detection = 0.0
+    detection_count = 0
     latest_observation_id: str | None = None
     overlay = "Move one hand horizontally inside the guide"
 
@@ -64,12 +68,29 @@ def main() -> int:
                 flow = cv2.calcOpticalFlowFarneback(
                     previous_gray, gray, None, 0.5, 3, 21, 3, 5, 1.2, 0
                 )
-                dx = float(np.median(flow[..., 0]))
-                dy = float(np.median(flow[..., 1]))
+                # A moving hand only occupies a fraction of the ROI, so a median
+                # over every pixel washes out to ~0. Look at the pixels that are
+                # actually in motion instead.
+                dx = flow[..., 0]
+                dy = flow[..., 1]
+                motion_mask = np.abs(dx) > args.threshold
+                moving_ratio = float(np.mean(motion_mask))
                 now = time.time()
-                horizontal = abs(dx) > args.threshold and abs(dx) > (abs(dy) * 1.8)
-                if horizontal and now - last_detection > 1.2:
-                    direction = "right" if dx > 0 else "left"
+                if moving_ratio > args.min_motion_ratio and now - last_detection > 1.2:
+                    mean_dx = float(np.mean(dx[motion_mask]))
+                    mean_dy = float(np.mean(dy[motion_mask]))
+                    horizontal = abs(mean_dx) > 0.3 and abs(mean_dx) > abs(mean_dy)
+                else:
+                    horizontal = False
+                if horizontal:
+                    max_abs_dx = float(np.max(np.abs(dx)))
+                    direction = "right" if mean_dx > 0 else "left"
+                    detection_count += 1
+                    print(
+                        f"DETECTED: {direction} "
+                        f"(max|dx|={max_abs_dx:.2f}, moving_ratio={moving_ratio:.1%}) "
+                        f"#{detection_count}"
+                    )
                     payload = {
                         "user_id": args.user_id,
                         "context": {
@@ -98,6 +119,7 @@ def main() -> int:
             previous_gray = gray
             cv2.rectangle(frame, (x1, y1), (x2, y2), (104, 224, 255), 2)
             cv2.putText(frame, overlay[:85], (24, 38), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (255, 255, 255), 2)
+            cv2.putText(frame, f"detections: {detection_count}", (24, 66), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (104, 224, 255), 2)
             cv2.putText(frame, "Q quit | N next | B previous | Space play/pause", (24, height - 24), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (220, 220, 220), 1)
             cv2.imshow("SilentOrchestra 2.0 - Local Optical Flow", frame)
 

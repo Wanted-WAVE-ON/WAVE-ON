@@ -52,7 +52,7 @@ def infer_intent(
             ),
         )
 
-    mode, status, error_message = execute_action(pattern.intent)
+    mode, status, error_message = execute_action(pattern.intent, pattern.target)
     execution = Execution(
         id=str(uuid4()),
         user_id=observation.user_id,

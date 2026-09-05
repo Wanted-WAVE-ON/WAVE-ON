@@ -197,6 +197,7 @@ class DashboardEvent(BaseModel):
     type: str
     title: str
     detail: str
+    status: str | None = None
 
 
 class DashboardResponse(BaseModel):
@@ -214,3 +215,4 @@ class DemoBootstrapResponse(BaseModel):
     suggestion_threshold: int
     auto_execution_threshold: float
     os_actions_enabled: bool
+    demo_mode: bool

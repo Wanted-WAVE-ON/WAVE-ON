@@ -183,10 +183,20 @@ async function observeGesture(button) {
 
       if (result.inference.matched) {
         lastExecution = result.inference.execution;
-        setAgentState("success", intentLabel(result.inference.intent), result.inference.reason);
+        const failed = result.inference.execution?.status === "FAILED";
+        setAgentState(
+          failed ? "" : "success",
+          failed ? `${intentLabel(result.inference.intent)} 실행 실패` : intentLabel(result.inference.intent),
+          failed ? executionError(result.inference.execution) : result.inference.reason,
+        );
         showActionOverlay(result.inference);
         lastObservation = null;
-        updateTeachingCard("자동 실행 완료", "Agent가 현재 맥락과 개인 기억을 바탕으로 의도를 추론했습니다.");
+        updateTeachingCard(
+          failed ? "자동 실행 실패" : "자동 실행 완료",
+          failed
+            ? "의도는 추론했지만 동작을 전달하지 못했습니다. 아래 사유를 확인해 주세요."
+            : "Agent가 현재 맥락과 개인 기억을 바탕으로 의도를 추론했습니다.",
+        );
       } else {
         setAgentState(
           "",
@@ -264,11 +274,20 @@ async function respondSuggestion(id, decision, modifiedIntent = null) {
   });
 }
 
+const executionError = (execution) => execution?.error_message
+  || "동작을 전달하지 못했습니다. 대상 앱과 실행 권한을 확인해 주세요.";
+
 function showActionOverlay(inference) {
   const overlay = byId("actionOverlay");
-  byId("overlayGesture").textContent = lastGestureSymbol || "?";
-  byId("overlayAction").textContent = intentLabel(inference.intent);
-  byId("overlayConfidence").textContent = `Learned gesture / ${Math.round(inference.confidence * 100)}%`;
+  const failed = inference.execution?.status === "FAILED";
+  overlay.dataset.status = failed ? "failed" : "success";
+  byId("overlayGesture").textContent = failed ? "!" : (lastGestureSymbol || "?");
+  byId("overlayAction").textContent = failed
+    ? `${intentLabel(inference.intent)} 실행 실패`
+    : intentLabel(inference.intent);
+  byId("overlayConfidence").textContent = failed
+    ? executionError(inference.execution)
+    : `Learned gesture / ${Math.round(inference.confidence * 100)}%`;
   if (!overlay.open) overlay.showModal();
   window.clearTimeout(showActionOverlay.timer);
   showActionOverlay.timer = window.setTimeout(() => closeActionOverlay(), 5200);
@@ -380,7 +399,7 @@ function renderEvents(events) {
   host.innerHTML = events.map((event) => {
     const date = new Date(event.time);
     const time = Number.isNaN(date.getTime()) ? "" : date.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    return `<div class="event-item" data-type="${event.type}"><span class="event-dot"></span><div><strong>${intentLabel(event.title)}</strong><small>${event.detail}</small></div><time>${time}</time></div>`;
+    return `<div class="event-item" data-type="${event.type}" data-status="${event.status || ""}"><span class="event-dot"></span><div><strong>${intentLabel(event.title)}</strong><small>${event.detail}</small></div><time>${time}</time></div>`;
   }).join("");
 }
 
@@ -394,6 +413,22 @@ async function refreshDashboard() {
   renderMemories(state.memories);
   renderInterpretations(state.memories);
   renderEvents(state.events);
+}
+
+// The webcam client posts to the API directly, so state can change without any
+// request from this tab. Poll while the tab is visible and idle.
+// ponytail: polling, not SSE - one demo user, one tab, 3s is invisible here.
+function startAutoRefresh() {
+  const poll = () => {
+    if (document.hidden) return;
+    if (byId("actionOverlay").open) return;
+    if (document.querySelector("[aria-busy='true']")) return;
+    refreshDashboard().catch(() => {});
+  };
+  window.setInterval(poll, 3000);
+  // Browsers throttle timers in a background tab, so catch up the moment the
+  // tab is looked at again rather than waiting out the throttled interval.
+  document.addEventListener("visibilitychange", poll);
 }
 
 async function resetDemo() {
@@ -425,6 +460,7 @@ async function init() {
     await post("/demo/bootstrap");
     renderContext();
     await refreshDashboard();
+    startAutoRefresh();
   } catch (error) {
     showToast(`서버 연결 실패: ${error.message}`);
   }

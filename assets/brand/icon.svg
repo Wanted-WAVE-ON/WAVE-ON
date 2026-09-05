@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="SilentOrchestra">
+  <title>SilentOrchestra</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#111d2b"/>
+      <stop offset="1" stop-color="#060b13"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#00d7f3"/>
+      <stop offset="1" stop-color="#a696e9"/>
+    </linearGradient>
+    <!-- iOS continuous-corner squircle: r=22.37%, 60% smoothing -->
+    <clipPath id="squircle"><path d="M366.51 0L657.49 0C806.3 0 849.93 0 898.93 24.97A229.07 229.07 0 0 1 999.03 125.07C1024 174.07 1024 217.7 1024 366.51L1024 657.49C1024 806.3 1024 849.93 999.03 898.93A229.07 229.07 0 0 1 898.93 999.03C849.93 1024 806.3 1024 657.49 1024L366.51 1024C217.7 1024 174.07 1024 125.07 999.03A229.07 229.07 0 0 1 24.97 898.93C0 849.93 0 806.3 0 657.49L0 366.51C0 217.7 0 174.07 24.97 125.07A229.07 229.07 0 0 1 125.07 24.97C174.07 0 217.7 0 366.51 0Z"/></clipPath>
+  </defs>
+  <g clip-path="url(#squircle)">
+    <rect width="1024" height="1024" fill="url(#bg)"/>
+    <g fill="url(#mark)">
+    <rect x="234" y="332" width="120" height="360" rx="60.0"/>
+    <rect x="452" y="182" width="120" height="660" rx="60.0"/>
+    <rect x="670" y="266" width="120" height="492" rx="60.0"/>
+    </g>
+  </g>
+</svg>

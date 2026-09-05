@@ -217,7 +217,9 @@ def dashboard(user_id: str, db: Session = Depends(get_db)) -> dict:
             "time": item.executed_at,
             "type": "execution",
             "title": item.intent,
-            "detail": f"Agent {item.status} / confidence {item.confidence:.0%}",
+            "detail": item.error_message
+            or f"Agent {item.status} / confidence {item.confidence:.0%}",
+            "status": item.status,
         }
         for item in executions
     ]

@@ -410,6 +410,8 @@ h1, h2, p { overflow-wrap: anywhere; }
 .event-dot { margin-top: var(--space-2xs); background: var(--color-neutral); }
 .event-item[data-type="suggestion"] .event-dot { background: var(--color-learning); }
 .event-item[data-type="execution"] .event-dot { background: var(--color-success); }
+.event-item[data-status="FAILED"] .event-dot { background: var(--color-error); }
+.event-item[data-status="FAILED"] small { color: var(--color-error); }
 .event-item strong,
 .event-item small { display: block; overflow-wrap: anywhere; }
 .event-item strong { font-size: var(--text-sm); }
@@ -429,6 +431,9 @@ h1, h2, p { overflow-wrap: anywhere; }
 .action-overlay[open] { display: grid; justify-items: start; gap: var(--space-xs); }
 .action-overlay::backdrop { background: var(--color-overlay); }
 .overlay-gesture { color: var(--color-accent); font-size: var(--text-xl); }
+.action-overlay[data-status="failed"] { border-color: var(--color-error); }
+.action-overlay[data-status="failed"] .overlay-gesture,
+.action-overlay[data-status="failed"] > small { color: var(--color-error); }
 .action-overlay > strong { font-family: var(--font-display); font-size: var(--text-md); }
 .action-overlay > small { color: var(--color-muted); font-size: var(--text-xs); }
 .feedback-row { margin-top: var(--space-xs); }

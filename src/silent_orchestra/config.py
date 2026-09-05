@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     suggestion_threshold: int = 3
     auto_execution_threshold: float = 0.60
     enable_os_actions: bool = False
+    require_active_window: bool = True
+    demo_mode: bool = True
     allowed_origins: str = "http://127.0.0.1:8000,http://localhost:8000"
 
     model_config = SettingsConfigDict(

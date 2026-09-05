@@ -35,7 +35,7 @@
     {
       "source": "schema",
       "index": 3,
-      "sql_preview": "CREATE TABLE contexts ( id TEXT PRIMARY KEY, user_id TEXT NOT NULL, active_app TEXT NOT NULL, activity TEXT NOT NULL CHECK (activity IN ('presentation','music','browser','other'...",
+      "sql_preview": "CREATE TABLE contexts ( id TEXT PRIMARY KEY, user_id TEXT NOT NULL, active_app TEXT NOT NULL, activity TEXT NOT NULL CHECK (activity IN ('presentation','music')), space TEXT NOT...",
       "status": "passed",
       "columns": [],
       "row_count": -1,
@@ -101,7 +101,7 @@
     {
       "source": "schema",
       "index": 9,
-      "sql_preview": "CREATE TABLE feedback ( id TEXT PRIMARY KEY, user_id TEXT NOT NULL, gesture_pattern_id TEXT NOT NULL, execution_id TEXT NOT NULL, feedback_type TEXT NOT NULL CHECK (feedback_typ...",
+      "sql_preview": "CREATE TABLE feedback ( id TEXT PRIMARY KEY, user_id TEXT NOT NULL, gesture_pattern_id TEXT NOT NULL, execution_id TEXT NOT NULL UNIQUE, feedback_type TEXT NOT NULL CHECK (feedb...",
       "status": "passed",
       "columns": [],
       "row_count": -1,
@@ -391,7 +391,7 @@
           "SIMULATED",
           0.94,
           "CORRECT",
-          "2026-09-02 01:32:43"
+          "2026-09-05 06:13:44"
         ]
       ],
       "error": null,

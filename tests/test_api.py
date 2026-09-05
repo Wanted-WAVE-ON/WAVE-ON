@@ -354,3 +354,83 @@ def test_feedback_rejects_duplicate_corrected_intent(client):
     )
     assert response.status_code == 400
     assert "already exists" in response.json()["detail"]
+
+
+def test_os_execution_is_blocked_when_target_app_is_not_active(monkeypatch):
+    """FR-10: a real key press only goes out while the target app is frontmost."""
+    from silent_orchestra.config import settings
+    from silent_orchestra.services import action_executor
+
+    monkeypatch.setattr(settings, "enable_os_actions", True)
+    monkeypatch.setattr(settings, "require_active_window", True)
+
+    def pressed_key(_key):
+        raise AssertionError("a key was sent while the target app was not active")
+
+    monkeypatch.setattr(action_executor, "active_window", lambda: "Slack")
+    mode, status, error = action_executor.execute_action("NEXT_SLIDE", "powerpoint")
+    assert (mode, status) == ("OS", "FAILED")
+    assert "Slack" in error
+
+    # An unreportable window (no accessibility permission) is also a refusal.
+    monkeypatch.setattr(action_executor, "active_window", lambda: None)
+    assert action_executor.execute_action("NEXT_SLIDE", "powerpoint")[1] == "FAILED"
+
+    # The matching app passes the check and reaches the key press.
+    monkeypatch.setattr(action_executor, "active_window", lambda: "Microsoft PowerPoint")
+    assert action_executor.check_active_window("powerpoint") is None
+
+    # Skipping the check is opt-in.
+    monkeypatch.setattr(settings, "require_active_window", False)
+    monkeypatch.setattr(action_executor, "active_window", pressed_key)
+    assert action_executor.execute_action("NEXT_SLIDE", "powerpoint")[0] == "OS"
+
+
+def test_failed_execution_is_visible_as_failed_in_the_dashboard(client, monkeypatch):
+    """FR-15: the dashboard separates a failed execution from a successful one."""
+    from silent_orchestra.services import intent_reasoner
+
+    bootstrap(client)
+    train_and_accept(client, "presentation", "PowerPoint", "NEXT_SLIDE", "powerpoint")
+    monkeypatch.setattr(
+        intent_reasoner, "execute_action", lambda *_: ("OS", "FAILED", "대상 앱이 활성 상태가 아닙니다.")
+    )
+    result = observe(client)
+    assert result["inference"]["execution"]["status"] == "FAILED"
+
+    events = client.get("/api/v1/dashboard?user_id=demo-user").json()["events"]
+    execution_event = next(event for event in events if event["type"] == "execution")
+    assert execution_event["status"] == "FAILED"
+    assert "활성 상태가 아닙니다" in execution_event["detail"]
+
+
+def test_reset_clears_learned_data_and_relearning_works(client):
+    """FR-16: reset erases dependent rows, and the loop can be trained again after it."""
+    bootstrap(client)
+    train_and_accept(client, "presentation", "PowerPoint", "NEXT_SLIDE", "powerpoint")
+    assert observe(client)["inference"]["matched"] is True
+
+    assert client.post("/api/v1/demo/reset").status_code == 200
+    dashboard = client.get("/api/v1/dashboard?user_id=demo-user").json()
+    assert dashboard["counts"] == {
+        "observations": 0,
+        "learned_memories": 0,
+        "pending_suggestions": 0,
+        "feedback": 0,
+    }
+    assert dashboard["events"] == []
+
+    train_and_accept(client, "presentation", "PowerPoint", "NEXT_SLIDE", "powerpoint")
+    assert observe(client)["inference"]["matched"] is True
+
+
+def test_reset_is_refused_outside_demo_mode(client, monkeypatch):
+    """FR-16: reset is a demo-only affordance."""
+    from silent_orchestra.config import settings
+
+    bootstrap(client)
+    train_and_accept(client, "presentation", "PowerPoint", "NEXT_SLIDE", "powerpoint")
+    monkeypatch.setattr(settings, "demo_mode", False)
+
+    assert client.post("/api/v1/demo/reset").status_code == 403
+    assert client.get("/api/v1/dashboard?user_id=demo-user").json()["counts"]["learned_memories"] == 1

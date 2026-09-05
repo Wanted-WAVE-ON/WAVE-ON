@@ -27,13 +27,21 @@ Base URL: `http://127.0.0.1:8000/api/v1`
   "user": {"id": "demo-user", "name": "수영", "created_at": "..."},
   "suggestion_threshold": 3,
   "auto_execution_threshold": 0.60,
-  "os_actions_enabled": false
+  "os_actions_enabled": false,
+  "demo_mode": true
 }
 ```
 
 ### `POST /demo/reset`
 
 데모 사용자의 관찰, 행동, 패턴, 제안, 실행, 피드백 데이터를 모두 삭제하고 초기 상태로 되돌립니다.
+삭제와 재생성은 하나의 트랜잭션에서 처리하므로 중간에 실패하면 이전 상태로 롤백됩니다.
+
+`SO_DEMO_MODE=false`인 환경에서는 `403`을 반환하고 데이터를 변경하지 않습니다.
+
+```json
+{"detail": "Demo reset is disabled outside demo mode."}
+```
 
 ## 2. 몸짓 관찰 및 추론
 
@@ -83,8 +91,23 @@ Base URL: `http://127.0.0.1:8000/api/v1`
     "reason": "presentation 맥락의 개인 기억과 100% 유사하여 '다음 슬라이드' 의도로 해석했습니다.",
     "execution": {
       "execution_mode": "DRY_RUN",
-      "status": "SIMULATED"
+      "status": "SIMULATED",
+      "error_message": null
     }
+  }
+}
+```
+
+`execution.status`는 `SIMULATED`(DRY_RUN 성공), `SUCCEEDED`(실제 OS 입력 성공), `FAILED` 중 하나입니다.
+`SO_ENABLE_OS_ACTIONS=true`이면 키 입력 전에 대상 앱이 활성 창인지 확인하고, 조건을 만족하지 않으면
+키를 보내지 않고 `FAILED`와 사유를 기록합니다.
+
+```json
+{
+  "execution": {
+    "execution_mode": "OS",
+    "status": "FAILED",
+    "error_message": "대상 앱이 활성 상태가 아니어서 실행하지 않았습니다. 현재 활성 창: Slack"
   }
 }
 ```

@@ -81,7 +81,11 @@ class GestureObservation(Base):
     detected_at: Mapped[Timestamp]
 
     context: Mapped[Context] = relationship(back_populates="observations")
-    action: Mapped["Action | None"] = relationship(back_populates="observation", uselist=False)
+    # Without the cascade the ORM nulls out actions.observation_id on delete,
+    # which the NOT NULL column rejects and a demo reset then fails on.
+    action: Mapped["Action | None"] = relationship(
+        back_populates="observation", uselist=False, cascade="all, delete-orphan"
+    )
 
 
 class Action(Base):

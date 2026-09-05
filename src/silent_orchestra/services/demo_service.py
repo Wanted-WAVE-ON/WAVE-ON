@@ -16,8 +16,20 @@ def ensure_demo_user(db: Session) -> User:
 
 
 def reset_demo_user(db: Session) -> User:
-    user = db.get(User, DEMO_USER_ID)
-    if user is not None:
-        db.delete(user)
+    """Delete the demo user and recreate it in one transaction.
+
+    Dependent rows go with it through ON DELETE CASCADE, so a failure anywhere
+    rolls back to the previous state instead of leaving the demo half-erased.
+    """
+    try:
+        existing = db.get(User, DEMO_USER_ID)
+        if existing is not None:
+            db.delete(existing)
+            db.flush()
+        user = User(id=DEMO_USER_ID, name=DEMO_USER_NAME)
+        db.add(user)
         db.commit()
-    return ensure_demo_user(db)
+        return user
+    except Exception:
+        db.rollback()
+        raise

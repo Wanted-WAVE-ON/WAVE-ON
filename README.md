@@ -95,6 +95,33 @@ python -m pip install pyautogui
 
 운영체제 접근성 권한이 필요할 수 있습니다.
 
+### 대상 활성 창 검증
+
+실제 키 입력 직전에 대상 앱이 활성 창인지 확인합니다. 조건을 만족하지 않으면 키를 보내지 않고
+실행을 `FAILED`로 기록하며 UI에 사유를 표시합니다.
+
+- 활성 창이 대상 앱이 아님: `현재 활성 창: Slack`처럼 감지된 창 이름을 남깁니다.
+- 활성 창을 확인할 수 없음: macOS 접근성 권한 거부, X11/Wayland 등 확인 수단이 없는 환경입니다.
+
+macOS는 `osascript`, Windows는 Win32 `GetForegroundWindow`를 사용합니다. 확인이 불가능한 환경에서만
+검증을 끕니다.
+
+```env
+SO_REQUIRE_ACTIVE_WINDOW=false
+```
+
+대상 앱 이름은 `src/silent_orchestra/services/action_executor.py`의 `TARGET_WINDOWS`에서 조정합니다.
+실제로 사용하는 앱을 추가하는 방식을 권장하며, 검증을 끄는 것은 최후의 수단입니다.
+
+### 데모 초기화 제한
+
+`POST /api/v1/demo/reset`은 demo-user와 종속 데이터를 하나의 트랜잭션에서 삭제·재생성합니다.
+실패하면 이전 상태로 롤백합니다. 데모 외 환경에서는 다음 값으로 비활성화하면 `403`을 반환합니다.
+
+```env
+SO_DEMO_MODE=false
+```
+
 ## 검증
 
 ```bash
@@ -105,10 +132,12 @@ python scripts/validate_sqlite.py --schema sql/schema.sql --seed sql/seed.sql --
 
 현재 검증 상태:
 
-- Pytest: 16개 테스트 통과
+- Pytest: 20개 테스트 통과
 - SQLite: 38개 statement 검증 통과
 - 원본 프레임 저장 0건 조건 통과
 - 동일 제스처의 Presentation/Music 맥락 분기 통과
+- 대상 앱이 활성 창이 아닐 때 실제 키 입력 차단 통과
+- 초기화 후 종속 데이터 0건과 재학습 통과
 
 ## API 요약
 

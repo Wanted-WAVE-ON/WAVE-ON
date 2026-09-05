@@ -9,4 +9,3 @@ htmlcov/
 *.sqlite
 *.sqlite3
 .DS_Store
-reports/ui-preview-*.png

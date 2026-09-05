@@ -1,6 +1,8 @@
 # 서비스 아키텍처
 
-## 1. 전체 구조
+규칙은 [SPEC.md](../SPEC.md)가 소유합니다. 이 문서는 **흐름과 코드 위치**만 다룹니다.
+
+## 1. 전체 흐름
 
 ```mermaid
 flowchart TD
@@ -24,70 +26,30 @@ flowchart TD
     N --> H
 ```
 
-## 2. 구현 모듈
+핵심은 제스처가 곧바로 명령이 되지 않는다는 점입니다. `Gesture + Context + Personal History`가
+후보 기억을 찾고, confidence가 임계값을 넘을 때만 실행되며, 결과는 피드백으로 기억에 되돌아옵니다.
 
-```text
-Perception input
-  ├─ Stable simulation UI
-  └─ Optional OpenCV optical-flow client
-          ↓
-Gesture Encoder
-          ↓
-Observation + Context API
-          ↓
-Pattern Learning Service
-          ↓
-Suggestion + Personal Gesture Memory
-          ↓
-Intent Reasoner
-          ↓
-Dry-run / OS Action Executor
-          ↓
-Feedback Service
-```
+## 2. 코드 위치
 
-## 3. Agent가 개입하는 지점
+원안의 6개 패키지(`perception/`, `context/`, `agent/`, `actions/`, `api/`, `db/`) 대신
+`routers/` + `services/` 2계층입니다(결정 근거: [decision-log.md](decision-log.md) 2026-09-02).
 
-Agent는 제스처를 곧바로 명령으로 변환하지 않습니다.
+| 단계 | 모듈 |
+|---|---|
+| Perception | `static/`(버튼 시뮬레이션), `scripts/webcam_gesture_client.py`(선택) |
+| Gesture Encoder | `services/gesture_encoder.py` |
+| Observation + Context | `routers/agent.py` (`POST /observe`) |
+| Pattern Learning | `services/pattern_learning.py` |
+| Suggestion / Memory | `services/pattern_learning.py` (`respond_to_suggestion`) |
+| Intent Reasoner | `services/intent_reasoner.py` |
+| Action Executor | `services/action_executor.py`, 허용 Intent는 `services/action_catalog.py` |
+| Feedback | `services/feedback_service.py` |
+| Demo 운영 | `routers/demo.py`, `services/demo_service.py` |
 
-```text
-Gesture + Context + Personal History
-             ↓
-     Candidate Memory Search
-             ↓
-        Confidence Score
-             ↓
-  High: automatic execution
-  Low:  no execution / user teaching
-             ↓
-          Feedback
-             ↓
-       Memory update
-```
+공통: `models.py`(ORM), `schemas.py`(요청·응답), `config.py`(설정), `database.py`(세션).
 
-## 4. Context-aware memory
+## 3. 개인정보 처리 경계
 
-개인 기억의 기본 키는 다음 조합입니다.
-
-```text
-User + Gesture representation + Context scope = Intent
-```
-
-예시:
-
-```text
-나영 + swipe:right + presentation = NEXT_SLIDE
-나영 + swipe:right + music        = NEXT_TRACK
-```
-
-## 5. 개인정보 처리 경계
-
-- 카메라 프레임은 메모리에서 모션 계산에만 사용
-- `cv2.imwrite`, 동영상 녹화, 프레임 API 업로드 없음
-- DB 저장 데이터: motion type, direction, duration, embedding, context, 후속 행동
-- 얼굴 특징·신원 특징 없음
-- 자동 실행은 승인된 `ACTIVE` memory만 대상
-
-## 6. 구현 보강 사항
-
-제공 기획의 최종 관계도에는 `Execution`이 포함되어 있으나 별도 필드 정의는 없습니다. 실제 구현에서는 실행 결과와 피드백을 감사 가능하게 연결하기 위해 `executions` 테이블을 추가했습니다.
+카메라 프레임은 프로세스 메모리에서 모션 계산에만 쓰이고 디스크·네트워크로 나가지 않습니다.
+`cv2.imwrite`·녹화·프레임 업로드 경로가 존재하지 않으며, DB에는 frame 경로·이미지 BLOB·얼굴 embedding
+컬럼 자체가 없습니다. 규칙 전문은 [SPEC.md](../SPEC.md#31-개인정보-타협-불가) P-1~P-4.

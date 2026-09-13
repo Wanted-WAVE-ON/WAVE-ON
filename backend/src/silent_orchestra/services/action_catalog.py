@@ -12,6 +12,12 @@ ACTION_LABELS = {
     "ZOOM_OUT": "축소",
 }
 
+# Intents where "how much", not just "which one", is meaningful - the only
+# ones a gesture's measured amplitude is allowed to scale (SPEC C-5 gap: a
+# single discrete intent per (gesture, context) can't otherwise carry a
+# magnitude). NEXT/PREVIOUS_SLIDE stay single-step so navigation stays predictable.
+SCALABLE_INTENTS = {"VOLUME_UP", "VOLUME_DOWN", "ZOOM_IN", "ZOOM_OUT"}
+
 CONTEXT_INTENTS = {
     "presentation": {
         "NEXT_SLIDE",

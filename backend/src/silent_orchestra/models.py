@@ -65,6 +65,7 @@ class GestureObservation(Base):
     __table_args__ = (
         CheckConstraint("duration_ms >= 0", name="ck_observation_duration"),
         CheckConstraint("frame_stored = 0", name="ck_raw_frame_never_stored"),
+        CheckConstraint("(speed IS NULL) = (amplitude IS NULL)", name="ck_observation_features_paired"),
         Index("ix_observations_user_gesture", "user_id", "gesture_key"),
         Index("ix_observations_detected_at", "detected_at"),
     )
@@ -77,6 +78,11 @@ class GestureObservation(Base):
     motion_type: Mapped[str] = mapped_column(String(50))
     direction: Mapped[str] = mapped_column(String(30), default="none")
     duration_ms: Mapped[int]
+    # Raw ROI-relative measurements, kept alongside the encoded embedding so an
+    # execution can scale itself (e.g. how far to move volume) instead of the
+    # embedding's normalized shape doing that job. None for simulated/legacy input.
+    speed: Mapped[float | None]
+    amplitude: Mapped[float | None]
     frame_stored: Mapped[bool] = mapped_column(default=False)
     detected_at: Mapped[Timestamp]
 

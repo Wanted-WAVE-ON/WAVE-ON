@@ -129,6 +129,47 @@ def test_learning_mode_remains_available_after_approval(client):
     assert teach(client, result["observation"]["id"], "PREVIOUS_SLIDE", "powerpoint")["action"]
 
 
+def test_scalable_intent_repeats_the_key_by_measured_amplitude(client):
+    # Both amplitudes below saturate the embedding's amplitude dimension to the
+    # same clipped angle (scale=1 in gesture_encoder.scalar_pair), so the two
+    # observations still match the same memory - only the *raw* amplitude
+    # stored on GestureObservation, not the shape used for matching, should
+    # change how many times the key repeats.
+    music_context = {"active_app": "Spotify", "activity": "music"}
+    for _ in range(3):
+        event = measured_observation(client, amplitude=1.0, context=music_context, infer=False)
+        result = teach(client, event["observation"]["id"], "VOLUME_UP", "media_player")
+    respond(client, result["suggestion"]["id"], "ACCEPTED")
+
+    baseline = measured_observation(client, amplitude=1.0, context=music_context)
+    assert baseline["inference"]["matched"] is True
+    assert baseline["inference"]["execution"]["parameters"]["magnitude"] == 2
+
+    bigger = measured_observation(client, amplitude=3.7, context=music_context)
+    assert bigger["inference"]["matched"] is True
+    assert bigger["inference"]["execution"]["parameters"]["magnitude"] == 4
+    assert "4단계" in bigger["inference"]["reason"]
+
+
+def test_non_scalable_intent_ignores_amplitude(client):
+    # NEXT_SLIDE is not in SCALABLE_INTENTS - magnitude must stay 1 even though
+    # a large, matching amplitude is present on the observation.
+    for _ in range(3):
+        event = measured_observation(client, amplitude=1.0, infer=False)
+        result = teach(client, event["observation"]["id"], "NEXT_SLIDE", "powerpoint")
+    respond(client, result["suggestion"]["id"], "ACCEPTED")
+
+    result = measured_observation(client, amplitude=3.7)
+    assert result["inference"]["matched"] is True
+    assert result["inference"]["execution"]["parameters"]["magnitude"] == 1
+
+
+def test_simulated_input_without_amplitude_stays_single_step(client):
+    train_and_accept(client, "presentation", "PowerPoint", "NEXT_SLIDE", "powerpoint")
+    result = observe(client)
+    assert result["inference"]["execution"]["parameters"]["magnitude"] == 1
+
+
 def test_accidental_suppression_expires_and_is_context_scoped(client, db_session):
     train_and_accept(client, "presentation", "PowerPoint", "NEXT_SLIDE", "powerpoint")
     train_and_accept(client, "music", "Spotify", "NEXT_TRACK", "media_player")

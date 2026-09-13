@@ -545,7 +545,8 @@ def test_privacy_db_rejects_raw_frame_insert_and_update(client, db_engine):
     columns = inspect(db_engine).get_columns("gesture_observations")
     assert {column["name"] for column in columns} == {
         "id", "user_id", "context_id", "gesture_key", "gesture_embedding",
-        "motion_type", "direction", "duration_ms", "frame_stored", "detected_at",
+        "motion_type", "direction", "duration_ms", "speed", "amplitude",
+        "frame_stored", "detected_at",
     }
     assert not any("BLOB" in str(column["type"]).upper() for column in columns)
     statements = [

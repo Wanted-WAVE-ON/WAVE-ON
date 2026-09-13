@@ -161,6 +161,23 @@ def test_agent_actions_cannot_reinforce_their_own_mapping(client, db_session):
     assert pending(client) == []
 
 
+def test_stale_evidence_inside_the_window_still_lowers_confidence(client, db_session):
+    fresh = train(client)
+    assert fresh["pattern"]["confidence"] == pytest.approx(0.87)
+
+    db_session.execute(update(Action).values(executed_at=datetime.now(timezone.utc) - timedelta(days=20)))
+    db_session.commit()
+
+    # A 4th, freshly-timestamped action joins 3 actions aged 20 days (inside
+    # the 30-day window, so L-3's count is unaffected) - but their average
+    # recency weight is 0.5**(20/10)=0.25, so confidence should sit well below
+    # what an all-fresh 4th round would give (0.97), not just below 0.99.
+    stale = record(client)
+    assert stale["pattern"]["observation_count"] == 4
+    assert stale["pattern"]["confidence"] == pytest.approx(0.424)
+    assert stale["pattern"]["confidence"] < fresh["pattern"]["confidence"]
+
+
 def test_accidental_detection_feedback_preserves_the_mapping(client):
     learned = train(client)
     accepted = respond(client, learned["suggestion"]["id"], "ACCEPTED")["pattern"]

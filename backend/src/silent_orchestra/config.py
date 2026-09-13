@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     database_url: str = f"sqlite:///{DEFAULT_DATABASE}"
     suggestion_threshold: int = 3
     auto_execution_threshold: float = 0.60
+    # Confidence half-life for supporting evidence: a habit whose actions sit
+    # this many days in the past counts for half as much as one from today.
+    recency_half_life_days: float = 10.0
+    # How long a completed execution stays open to a hands-free confirm gesture
+    # (as feedback) once no suggestion is waiting for one.
+    confirm_feedback_window_seconds: int = 60
     enable_os_actions: bool = False
     require_active_window: bool = True
     demo_mode: bool = True

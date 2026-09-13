@@ -82,7 +82,10 @@ def check_active_window(target: str) -> str | None:
     return None
 
 
-def execute_action(intent: str, target: str) -> tuple[str, str, str | None]:
+def execute_action(intent: str, target: str, magnitude: int = 1) -> tuple[str, str, str | None]:
+    # Bounded so a bad upstream estimate can only repeat a key a few extra
+    # times, never flood the target application.
+    magnitude = min(max(magnitude, 1), 5)
     if not settings.enable_os_actions:
         return "DRY_RUN", "SIMULATED", None
 
@@ -98,7 +101,7 @@ def execute_action(intent: str, target: str) -> tuple[str, str, str | None]:
     try:
         import pyautogui  # type: ignore[import-not-found]
 
-        pyautogui.press(key)
+        pyautogui.press(key, presses=magnitude)
         return "OS", "SUCCEEDED", None
     except Exception as exc:  # pragma: no cover - hardware/OS dependent
         return "OS", "FAILED", str(exc)

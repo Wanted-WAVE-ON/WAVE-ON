@@ -35,6 +35,11 @@ const gestureSymbols = {
   "circle:clockwise": "○",
 };
 
+// Reserved hands-free confirm gestures (backend: services/confirmation.py) -
+// they answer a pending suggestion or recent execution instead of being
+// taught as a new gesture, so they skip the usual "what did you do next" step.
+const CONFIRM_GESTURES = new Set(["open_palm:none", "circle:clockwise"]);
+
 let currentContext = "presentation";
 let lastObservation = null;
 let lastGestureLabel = null;
@@ -170,6 +175,19 @@ async function observeGesture(button) {
         attempt_inference: true,
       });
       lastObservation = result.observation;
+
+      if (CONFIRM_GESTURES.has(`${motion}:${direction}`)) {
+        setAgentState(
+          result.inference.matched ? "success" : "",
+          result.inference.matched ? "확인했어요" : "확인 몸짓",
+          result.inference.reason,
+        );
+        showToast(result.inference.reason);
+        lastObservation = null;
+        renderActionButtons();
+        await refreshDashboard();
+        return;
+      }
 
       if (result.inference.matched) {
         lastExecution = result.inference.execution;

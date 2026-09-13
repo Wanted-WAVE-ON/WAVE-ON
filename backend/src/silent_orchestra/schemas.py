@@ -70,6 +70,8 @@ class ObservationRead(ORMModel):
     motion_type: str
     direction: str
     duration_ms: int
+    speed: float | None
+    amplitude: float | None
     frame_stored: bool
     detected_at: datetime
 

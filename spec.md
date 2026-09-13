@@ -33,12 +33,13 @@
 | L-1 | `POST /teach`는 관찰과 후속 행동을 1:1로 연결한다. 이미 연결된 관찰은 400이다. |
 | L-2 | `action_type`이 맥락 카탈로그 밖이면 400이며 데이터를 생성하지 않는다. |
 | L-3 | 같은 `user + gesture_key + activity`에서 최근 30일 이내 최대 20건의 사용자 후속 행동으로 최빈 행동 1개를 고른다. target도 승자 행동의 최빈값이며 동률이면 가장 최근 값을 사용한다. 패턴 embedding은 이 창 안의 승자 행동 관찰만으로 다시 평균한다. |
-| L-4 | confidence = `min(0.99, 0.35 + 0.10 × min(승자횟수, 5) + 0.22 × 승자횟수/전체횟수)`. |
+| L-4 | confidence = `min(0.99, (0.35 + 0.10 × min(승자횟수, 5) + 0.22 × 승자횟수/전체횟수) × recency_factor)`. `recency_factor`는 승자 행동들의 `0.5 ^ (경과일수 / recency_half_life_days)`(기본 반감기 10일) 평균이며, 방금 쌓인 증거는 1에 가깝고 30일 창 끝에 걸친 오래된 증거는 값이 줄어든다. |
 | L-5 | 최빈 행동 동률이면 해당 gesture+context의 모든 `ACTIVE` 기억을, 승자가 바뀌면 기존 승자의 `ACTIVE` 기억을 `CANDIDATE`로 강등하고 `auto_execute`를 끈다. 현재 승자가 아니거나 임계 건수에 못 미치는 대기 제안은 삭제한다. |
 | L-6 | 승자 횟수 ≥ `suggestion_threshold`(기본 3), 동률 아님, 패턴이 `ACTIVE` 아님일 때만 `PENDING` 제안을 만든다. 패턴당 대기 제안은 최대 1개다. |
 | L-7 | `(user_id, gesture_key, context_scope, intent)`는 유일하다. |
 | L-8 | activity 생략 시 `active_app`으로 presentation/music을 판정한다. 앱도 생략하면 로컬 `active_window()`를 읽는다. 미지원·모호한 앱은 추측하지 않고 관찰을 거부한다. 명시 activity는 Simulation/수동 override다. space·device는 스냅샷 메타데이터이며 추론 신호가 아니다. |
 | L-9 | Windows 웹캠 관측 모드는 지원 앱에 전달되는 실제 탐색/미디어 키만 수동 입력으로 관측한다. 관찰 후 5초 이내, 동일 앱·맥락의 첫 조작만 연결하며 합성 키·자동 실행된 관찰·만료된 관찰은 제외한다. 학습 모드는 추론을 끄고 승인 후에도 기존 조작을 관측할 수 있다. 다른 플랫폼과 로컬 N/B/Space 입력은 명시적인 라벨 시뮬레이션이다. |
+| L-10 | `open_palm:none`·`circle:clockwise`는 어떤 `CONTEXT_INTENTS`에도 속하지 않는 예약된 확인 몸짓이다. 관찰되면 새 후보로 학습되지 않고, M-2/F-1의 승인·피드백 응답을 손 대신 대신한다([confirmation.py](backend/src/silent_orchestra/services/confirmation.py)). |
 
 관찰마다 Context 스냅샷 1행을 생성한다. 테이블·컬럼·제약 원본은 [ERD](docs/erd.md)와 [schema.sql](backend/sql/schema.sql), 요청·응답 스키마는 실행 서버의 `/docs`다.
 
@@ -60,7 +61,8 @@
 | I-1 | M-1의 후보 중 같은 사용자·`context_scope`만 추론한다. |
 | I-2 | 점수 = `pattern.confidence × (0.20 × gesture_key 일치 + 0.80 × max(코사인 유사도, 0))`. 유사도 0.85 미만은 제외하며 서로 다른 Intent의 상위 점수 차이가 0.08 미만이면 실행하지 않는다. 실측 속도·진폭은 함께 제공해야 하며, 기존 6차원과 실측 11차원 embedding은 서로 매칭하지 않고 해당 입력으로 재학습한다. |
 | I-3 | 점수 < `auto_execution_threshold`(기본 0.60)면 실행하지 않고 사유를 반환한다. |
-| I-4 | 모든 실행은 성공·실패와 무관하게 `executions`에 `SIMULATED`·`SUCCEEDED`·`FAILED`로 기록한다. |
+| I-3a | `VOLUME_UP`·`VOLUME_DOWN`·`ZOOM_IN`·`ZOOM_OUT`(`SCALABLE_INTENTS`)만 실측 `amplitude`로 크기를 갖는다. `magnitude = 1 + min(int(amplitude), 4)`회 키를 반복하며 1~5로 제한한다. 실측값이 없거나(시뮬레이션) 다른 Intent는 항상 1회다. |
+| I-4 | 모든 실행은 성공·실패와 무관하게 `executions`에 `SIMULATED`·`SUCCEEDED`·`FAILED`로 기록하며, `parameters.magnitude`에 실제 반복 횟수를 남긴다. |
 | I-5 | 기본은 OS 제어 없이 결과만 표시하는 `DRY_RUN`. `SO_ENABLE_OS_ACTIONS=true`일 때만 실제 키를 보낸다. |
 | I-6 | `SO_REQUIRE_ACTIVE_WINDOW=true`(기본)면 대상 앱 활성 여부를 확인한다. 비활성·확인 불가 시 키를 보내지 않고 `FAILED`와 사유를 UI에 표시한다. |
 | I-7 | 미매핑 Intent는 키를 보내지 않고 `FAILED`로 기록한다. |

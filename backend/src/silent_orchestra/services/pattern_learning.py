@@ -19,10 +19,18 @@ def _utc(value: datetime) -> datetime:
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
 
 
-def _confidence(winner_count: int, total_count: int) -> float:
+def _recency_weight(executed_at: datetime, now: datetime) -> float:
+    """Exponential decay so a habit built from old evidence stays less certain
+    than the same count built from recent evidence, even inside the 30-day
+    learning window (SPEC C-2 gap: raw counts alone treat both the same)."""
+    age_days = (now - _utc(executed_at)).total_seconds() / 86400
+    return 0.5 ** (max(age_days, 0.0) / settings.recency_half_life_days)
+
+
+def _confidence(winner_count: int, total_count: int, recency_factor: float) -> float:
     consistency = winner_count / total_count
     score = 0.35 + (0.10 * min(winner_count, 5)) + (0.22 * consistency)
-    return round(min(0.99, score), 3)
+    return round(min(0.99, score * recency_factor), 3)
 
 
 def check_intent_change(db: Session, pattern: GesturePattern, intent: str, field: str) -> None:
@@ -92,8 +100,11 @@ def record_user_action(
     ranked_actions = Counter(row.Action.action_type for row in rows).most_common(2)
     winning_intent, winning_count = ranked_actions[0]
     has_unique_winner = len(ranked_actions) == 1 or winning_count > ranked_actions[1][1]
-    confidence = _confidence(winning_count, len(rows))
     winning_rows = [row for row in rows if row.Action.action_type == winning_intent]
+    recency_factor = sum(
+        _recency_weight(row.Action.executed_at, now) for row in winning_rows
+    ) / len(winning_rows)
+    confidence = _confidence(winning_count, len(rows), recency_factor)
     # Rows are newest first, so Counter's insertion order breaks target ties
     # using the most recent target rather than an arbitrary database row.
     winning_target = Counter(row.Action.target for row in winning_rows).most_common(1)[0][0]

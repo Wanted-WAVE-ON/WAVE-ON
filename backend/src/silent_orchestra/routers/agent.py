@@ -30,6 +30,7 @@ from ..schemas import (
     TeachRequest,
     TeachResponse,
 )
+from ..services.confirmation import apply_confirmation, is_confirm_gesture
 from ..services.feedback_service import record_feedback
 from ..services.context_resolver import resolve_context
 from ..services.gesture_encoder import encode_gesture, gesture_key
@@ -77,16 +78,24 @@ def observe(payload: ObserveRequest, db: Session = Depends(get_db)) -> dict:
         motion_type=payload.gesture.motion_type,
         direction=payload.gesture.direction,
         duration_ms=payload.gesture.duration_ms,
+        speed=payload.gesture.speed,
+        amplitude=payload.gesture.amplitude,
         frame_stored=False,
     )
     db.add_all([context, observation])
     db.commit()
 
-    inference = (
-        infer_intent(db, observation, context)
-        if payload.attempt_inference
-        else InferenceResult(matched=False, reason="추론을 요청하지 않았습니다.")
-    )
+    # A reserved confirm gesture never becomes a learnable candidate itself -
+    # it only answers whatever suggestion or unrated execution is waiting.
+    if is_confirm_gesture(observation.gesture_key):
+        matched, reason, intent = apply_confirmation(
+            db, payload.user_id, activity, observation.gesture_key
+        )
+        inference = InferenceResult(matched=matched, intent=intent, reason=reason)
+    elif payload.attempt_inference:
+        inference = infer_intent(db, observation, context)
+    else:
+        inference = InferenceResult(matched=False, reason="추론을 요청하지 않았습니다.")
     return {"context": context, "observation": observation, "inference": inference}
 
 

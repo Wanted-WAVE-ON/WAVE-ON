@@ -7,9 +7,19 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..models import Context, Execution, Feedback, GestureObservation, GesturePattern
 from ..schemas import InferenceResult
-from .action_catalog import action_label
+from .action_catalog import SCALABLE_INTENTS, action_label
 from .action_executor import execute_action
 from .gesture_encoder import cosine_similarity
+
+
+def _magnitude(intent: str, amplitude: float | None) -> int:
+    """How many times to repeat the key for a scalable intent (SPEC C-5): a
+    bigger measured swipe means a bigger volume/zoom step. Fixed at 1 for
+    simulated input (no amplitude) and for intents where "how much" has no
+    meaning, so existing single-step behavior is unchanged for them."""
+    if intent not in SCALABLE_INTENTS or amplitude is None:
+        return 1
+    return 1 + min(int(amplitude), 4)
 
 
 def _score(observation: GestureObservation, pattern: GesturePattern) -> tuple[float, float]:
@@ -79,7 +89,8 @@ def infer_intent(
             ),
         )
 
-    mode, status, error_message = execute_action(pattern.intent, pattern.target)
+    magnitude = _magnitude(pattern.intent, observation.amplitude)
+    mode, status, error_message = execute_action(pattern.intent, pattern.target, magnitude)
     execution = Execution(
         id=str(uuid4()),
         user_id=observation.user_id,
@@ -87,7 +98,7 @@ def infer_intent(
         observation_id=observation.id,
         intent=pattern.intent,
         target=pattern.target,
-        parameters={},
+        parameters={"magnitude": magnitude},
         confidence=confidence,
         execution_mode=mode,
         status=status,
@@ -96,6 +107,7 @@ def infer_intent(
     db.add(execution)
     db.commit()
 
+    scale_note = f" ({magnitude}단계)" if magnitude > 1 else ""
     return InferenceResult(
         matched=True,
         intent=pattern.intent,
@@ -103,7 +115,7 @@ def infer_intent(
         confidence=confidence,
         reason=(
             f"{context.activity} 맥락의 개인 기억과 {similarity:.0%} 유사하여 "
-            f"'{action_label(pattern.intent)}' 의도로 해석했습니다."
+            f"'{action_label(pattern.intent)}'{scale_note} 의도로 해석했습니다."
         ),
         execution=execution,
     )

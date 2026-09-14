@@ -6,6 +6,7 @@ def test_space_only_teaches_playback_in_music_context():
     assert action_for_key(ord(" "), "presentation") is None
 
 
+import math
 import sys
 from types import SimpleNamespace
 
@@ -45,6 +46,83 @@ def test_measured_features_are_roi_relative_and_clamped():
     fast, big = webcam.measured_features(100_000, 0.001, 640)
     assert fast == 10.0 and big == 10.0
     assert webcam.measured_features(0.0, 0.0, 640) == (0.0, 0.0)
+
+
+def test_foreground_centroid_and_motion_energy_ignore_empty_masks(np):
+    mask = np.zeros((10, 10), dtype=bool)
+    mask[2:4, 6:8] = True
+    assert webcam.foreground_centroid(mask) == (6.5, 2.5)
+    assert webcam.foreground_centroid(np.zeros((10, 10), dtype=bool)) is None
+
+    dx = np.zeros((10, 10))
+    dy = np.zeros((10, 10))
+    dx[mask] = 3.0
+    dy[mask] = 4.0
+    assert webcam.foreground_motion_energy(dx, dy, mask) == pytest.approx(7.0)
+    assert webcam.foreground_motion_energy(dx, dy, np.zeros((10, 10), dtype=bool)) == 0.0
+
+
+def test_open_palm_needs_sustained_still_coverage_and_rearms_once_lowered():
+    stable_count, active = 0, False
+    for _ in range(webcam.PALM_STABLE_FRAMES - 1):
+        detected, stable_count, active = webcam.track_open_palm(0.5, 0.1, stable_count, active)
+        assert detected is False
+    detected, stable_count, active = webcam.track_open_palm(0.5, 0.1, stable_count, active)
+    assert detected is True and active is True
+    # Holding the palm up must not keep re-firing every frame.
+    detected, stable_count, active = webcam.track_open_palm(0.5, 0.1, stable_count, active)
+    assert detected is False
+    # Lowering the hand drops coverage below the reset ratio and re-arms detection.
+    detected, stable_count, active = webcam.track_open_palm(0.05, 0.1, stable_count, active)
+    assert detected is False and active is False
+    for _ in range(webcam.PALM_STABLE_FRAMES - 1):
+        detected, stable_count, active = webcam.track_open_palm(0.5, 0.1, stable_count, active)
+    detected, stable_count, active = webcam.track_open_palm(0.5, 0.1, stable_count, active)
+    assert detected is True
+
+
+def test_open_palm_ignores_motion_thats_not_held_still():
+    stable_count, active = 0, False
+    for _ in range(10):
+        detected, stable_count, active = webcam.track_open_palm(0.5, 5.0, stable_count, active)
+        assert detected is False and stable_count == 0
+
+
+def test_circle_rotation_recognizes_a_full_loop_but_not_a_quarter_turn():
+    def point_at(fraction):
+        angle = fraction * math.tau
+        return (40 + (math.cos(angle) * 10), 30 + (math.sin(angle) * 10), fraction)
+
+    quarter = [point_at(i / 12) for i in range(4)]
+    rotation, radius = webcam.compute_circle_rotation(quarter)
+    assert abs(rotation) < webcam.CIRCLE_MIN_ROTATION
+
+    full_loop = [point_at(i / 12) for i in range(12)]
+    rotation, radius = webcam.compute_circle_rotation(full_loop)
+    assert abs(rotation) >= webcam.CIRCLE_MIN_ROTATION
+    assert radius == pytest.approx(10.0, abs=0.5)
+
+
+def test_circle_features_are_roi_relative_and_clamped():
+    speed, amplitude = webcam.circle_features(radius=64, rotation=math.pi, duration_s=1.0, roi_width=640)
+    assert amplitude == pytest.approx(0.1)
+    assert speed == pytest.approx(math.pi, abs=1e-4)
+    assert webcam.circle_features(radius=0, rotation=0, duration_s=0, roi_width=640) == (0.0, 0.0)
+    fast, big = webcam.circle_features(radius=100_000, rotation=100.0, duration_s=0.001, roi_width=640)
+    assert fast == 10.0 and big == 10.0
+
+
+def test_observation_payload_validates_direction_against_motion_type():
+    palm = webcam.observation_payload("demo-user", "music", None, "none", motion_type="open_palm")
+    assert palm["gesture"] == {"motion_type": "open_palm", "direction": "none", "duration_ms": 430}
+    circle = webcam.observation_payload(
+        "demo-user", "music", None, "clockwise", motion_type="circle", speed=1.2, amplitude=0.3
+    )
+    assert circle["gesture"]["motion_type"] == "circle"
+    with pytest.raises(ValueError):
+        webcam.observation_payload("demo-user", "music", None, "right", motion_type="open_palm")
+    with pytest.raises(ValueError):
+        webcam.observation_payload("demo-user", "music", None, "clockwise", motion_type="swipe")
 
 
 def test_feature_payload_carries_measured_motion(client):

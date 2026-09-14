@@ -6,11 +6,11 @@
 
 - FastAPI(도메인 엔드포인트 8개 + demo/health), 단일 페이지 워크벤치, 로컬 SQLite를 사용한다. 구조·코드 지도는 [architecture](docs/architecture.md), 설정은 [config.py](backend/src/silent_orchestra/config.py)(`SO_DATABASE_URL` 기본 로컬 SQLite, `SO_ALLOWED_ORIGINS` 기본 로컬 2개).
 - 기본 시연은 버튼 기반 Stable Simulation + DRY_RUN. 기능 추가보다 정합성·검증을 우선한다.
-- 웹캠 실기 경로는 활성 앱으로 맥락을 판정하고, Windows에서는 실제 앱 조작을 관측한다. `--learn`으로 추론을 끄고 재학습할 수 있다. 라벨 Simulation과 실기 관측을 UI·CLI·발표에서 구분한다.
+- 웹캠 실기 경로는 활성 앱으로 맥락을 판정하고, Windows에서는 실제 앱 조작을 관측한다. `--learn`으로 추론을 끄고 재학습할 수 있다. 라벨 Simulation과 실기 관측을 UI·CLI·발표에서 구분한다. swipe 외에 open_palm(정지한 전경 지속)·circle(전경 중심점 누적 회전각)도 이미 계산 중인 MOG2 전경 마스크로 감지하며, 웹 UI와 같은 네 가지 몸짓 어휘를 공유한다.
 - 웹캠 시작은 실제 첫 프레임 수신으로 검증한다. Windows에서는 DirectShow와 Media Foundation을 순서대로 시도하고, 실패한 캡처는 해제한 뒤 다음 방식으로 전환한다. 장치 번호·캡처 방식 수동 선택과 API·키 훅 없이 실행하는 카메라 점검을 지원한다. 장치 오류와 API 오류를 분리하며 프레임은 저장하지 않는다.
-- 웹 UI는 사용자가 시작한 브라우저 카메라 미리보기와 로컬 모션 분석을 지원한다. 권한을 얻은 뒤 실제 비디오 입력 장치를 선택할 수 있으며, 프레임은 `<video>`와 메모리 캔버스에서만 처리하고 API에는 기존 계약의 motion_type·direction·duration_ms·speed·amplitude만 보낸다. swipe·원형 움직임은 로컬 궤적에서, 손바닥 펼치기는 지수평균 배경 대비 정지한 큰 전경 영역의 지속으로 감지하고(speed·amplitude는 swipe에만 동반), 중지·페이지 종료 시 MediaStream 트랙을 해제한다.
+- 웹 UI는 사용자가 시작한 브라우저 카메라 미리보기와 로컬 모션 분석을 지원한다. 권한을 얻은 뒤 실제 비디오 입력 장치를 선택할 수 있으며, 프레임은 `<video>`와 메모리 캔버스에서만 처리하고 API에는 기존 계약의 motion_type·direction·duration_ms·speed·amplitude만 보낸다. swipe·원형 움직임은 로컬 궤적에서, 손바닥 펼치기는 지수평균 배경 대비 정지한 큰 전경 영역의 지속으로 감지하고(speed·amplitude는 swipe·원형에만 동반 — 원형은 반지름·회전속도로 개인차를 반영, 손바닥은 정적 동작이라 미동반), 중지·페이지 종료 시 MediaStream 트랙을 해제한다.
 - 모션 구간의 시작과 끝에서 실측 시간·ROI 기준 속도·진폭을 산출한다. 서버는 실측 embedding을 만들고 최근 승자 관찰의 평균을 기억한다. DB 컬럼 추가 없이 기존 JSON embedding과 feedback/suggestion 시각을 활용한다.
-- 학습 창은 30일·20건으로 제한하고, 승자 변경·거절 후 새 증거·감지 오류 억제를 회귀 테스트한다. 유사도 점수는 SPEC I-2를 따르며 같은 키라도 개인 모션이 다르면 실행을 보류한다.
+- 학습 창은 30일·20건으로 제한하고, 승자 변경·거절 후 새 증거·감지 오류 억제를 회귀 테스트한다. 승자 선택 자체가 `recency_half_life_days` 가중합이라(SPEC L-3), raw count가 더 많아도 오래된 습관이 최근 새 습관에게 밀릴 수 있다 — 증거 총량(observation_count)·threshold 게이트는 raw count 그대로다. 유사도 점수는 SPEC I-2를 따르며 같은 키라도 개인 모션이 다르면 실행을 보류한다.
 - 의도적 단순화: [app.js](frontend/app.js)는 SSE 대신 3초 폴링, 실행 오버레이 자동 닫힘 없음; [action_executor.py](backend/src/silent_orchestra/services/action_executor.py)는 활성 창 이름 부분 문자열 매칭·리눅스 활성 창 미지원; [models.py](backend/src/silent_orchestra/models.py)의 `Annotated` 컬럼 별칭은 유지한다.
 
 ## 단계별 계획

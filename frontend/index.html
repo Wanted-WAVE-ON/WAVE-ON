@@ -48,6 +48,26 @@
         </div>
       </section>
 
+      <section class="camera-console panel" aria-labelledby="cameraTitle">
+        <div class="panel-heading">
+          <div><h2 id="cameraTitle">카메라 손짓 인식</h2><p>영상은 이 브라우저에서만 처리하고 저장하거나 전송하지 않습니다.</p></div>
+          <span class="mode-pill" id="cameraMode">Camera off</span>
+        </div>
+        <div class="camera-preview" id="cameraPreview" data-state="idle">
+          <video id="cameraVideo" autoplay muted playsinline aria-label="로컬 카메라 미리보기"></video>
+          <div class="camera-preview-copy" id="cameraPreviewCopy"><strong>카메라가 꺼져 있습니다</strong><span>시작하면 이 페이지에서만 미리보기를 표시합니다.</span></div>
+          <span class="camera-live" id="cameraLive" hidden>LIVE</span>
+        </div>
+        <div class="camera-controls">
+          <button class="primary-button" id="startCameraButton" type="button">카메라 시작</button>
+          <button class="secondary-button" id="stopCameraButton" type="button" disabled>카메라 중지</button>
+          <label class="camera-device" for="cameraDeviceSelect">입력 장치
+            <select id="cameraDeviceSelect" disabled><option value="">카메라 시작 후 선택</option></select>
+          </label>
+          <p id="cameraStatus" role="status" aria-live="polite">카메라 권한을 요청하지 않았습니다.</p>
+        </div>
+      </section>
+
       <section class="teaching-card panel" id="teachingCard" aria-labelledby="teachingTitle" aria-live="polite">
         <div class="teaching-state">
           <span class="teaching-icon" aria-hidden="true">AI</span>

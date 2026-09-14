@@ -57,6 +57,27 @@ def test_recent_window_switches_active_winner_without_passing_through_a_tie(clie
     assert client.get("/api/v1/memories", params={"user_id": USER}).json() == []
 
 
+def test_recency_weighted_evidence_can_flip_the_winner_without_a_raw_count_tie(client, db_session):
+    # A once-dominant habit (5x NEXT_SLIDE) stays inside the 30-day window but
+    # is old; a smaller, much more recent run of a different intent should
+    # still be able to take over as the current habit. A raw-count-only vote
+    # would keep NEXT_SLIDE on top for the rest of the window regardless of
+    # how long PREVIOUS_SLIDE keeps being the thing the user actually does
+    # (structural audit C-2 residual: recency only discounted confidence,
+    # never who wins).
+    train(client, rounds=5)
+    db_session.execute(
+        update(Action)
+        .where(Action.action_type == "NEXT_SLIDE")
+        .values(executed_at=datetime.now(timezone.utc) - timedelta(days=20))
+    )
+    db_session.commit()
+
+    result = train(client, rounds=3, intent="PREVIOUS_SLIDE")
+    assert result["pattern"]["intent"] == "PREVIOUS_SLIDE"
+    assert result["pattern"]["observation_count"] == 3
+
+
 def test_expired_evidence_no_longer_overrules_new_habit(client, db_session):
     learned = train(client)
     old_id = respond(client, learned["suggestion"]["id"], "ACCEPTED")["pattern"]["id"]

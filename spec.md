@@ -32,9 +32,9 @@
 |---|---|
 | L-1 | `POST /teach`는 관찰과 후속 행동을 1:1로 연결한다. 이미 연결된 관찰은 400이다. |
 | L-2 | `action_type`이 맥락 카탈로그 밖이면 400이며 데이터를 생성하지 않는다. |
-| L-3 | 같은 `user + gesture_key + activity`에서 최근 30일 이내 최대 20건의 사용자 후속 행동으로 최빈 행동 1개를 고른다. target도 승자 행동의 최빈값이며 동률이면 가장 최근 값을 사용한다. 패턴 embedding은 이 창 안의 승자 행동 관찰만으로 다시 평균한다. |
+| L-3 | 같은 `user + gesture_key + activity`에서 최근 30일 이내 최대 20건의 사용자 후속 행동을 각 행동의 `0.5 ^ (경과일수 / recency_half_life_days)` 가중치로 합산해, 가중합이 가장 큰 행동 1개를 승자로 고른다(구조 감사 C-2 잔여분: raw count만 쓰면 30일 창 초반에 쌓인 오래된 다수가 최근의 새 습관을 계속 이긴다). `observation_count`·L-4의 승자횟수는 raw count다. target은 승자 행동의 최빈값이며 동률이면 가장 최근 값을 사용한다. 패턴 embedding은 이 창 안의 승자 행동 관찰만으로 다시 평균한다. |
 | L-4 | confidence = `min(0.99, (0.35 + 0.10 × min(승자횟수, 5) + 0.22 × 승자횟수/전체횟수) × recency_factor)`. `recency_factor`는 승자 행동들의 `0.5 ^ (경과일수 / recency_half_life_days)`(기본 반감기 10일) 평균이며, 방금 쌓인 증거는 1에 가깝고 30일 창 끝에 걸친 오래된 증거는 값이 줄어든다. |
-| L-5 | 최빈 행동 동률이면 해당 gesture+context의 모든 `ACTIVE` 기억을, 승자가 바뀌면 기존 승자의 `ACTIVE` 기억을 `CANDIDATE`로 강등하고 `auto_execute`를 끈다. 현재 승자가 아니거나 임계 건수에 못 미치는 대기 제안은 삭제한다. |
+| L-5 | L-3의 가중합이 1위·2위 사이에 사실상 동률(상대 오차 1e-6 이내)이면 해당 gesture+context의 모든 `ACTIVE` 기억을, 승자가 바뀌면 기존 승자의 `ACTIVE` 기억을 `CANDIDATE`로 강등하고 `auto_execute`를 끈다. 현재 승자가 아니거나 임계 건수에 못 미치는 대기 제안은 삭제한다. |
 | L-6 | 승자 횟수 ≥ `suggestion_threshold`(기본 3), 동률 아님, 패턴이 `ACTIVE` 아님일 때만 `PENDING` 제안을 만든다. 패턴당 대기 제안은 최대 1개다. |
 | L-7 | `(user_id, gesture_key, context_scope, intent)`는 유일하다. |
 | L-8 | activity 생략 시 `active_app`으로 presentation/music을 판정한다. 앱도 생략하면 로컬 `active_window()`를 읽는다. 미지원·모호한 앱은 추측하지 않고 관찰을 거부한다. 명시 activity는 Simulation/수동 override다. space·device는 스냅샷 메타데이터이며 추론 신호가 아니다. |

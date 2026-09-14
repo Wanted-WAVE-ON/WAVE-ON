@@ -23,6 +23,67 @@ KEY_ACTIONS = {
 }
 
 TEACH_WINDOW_SECONDS = 5.0
+CAMERA_WARMUP_READS = 10
+
+
+class CameraOpenError(RuntimeError):
+    """No requested capture backend delivered a usable frame."""
+
+
+def valid_camera_frame(frame) -> bool:
+    import numpy as np
+
+    return (
+        isinstance(frame, np.ndarray)
+        and frame.size > 0
+        and frame.ndim == 3
+        and frame.shape[2] in (3, 4)
+    )
+
+
+def open_camera(cv2, index: int = 0, backend: str = "auto"):
+    """Return the capture, its first usable frame, and the selected backend.
+
+    Opening a device is not enough: some Windows backends report success but
+    never deliver an image. Release each failed candidate before trying another.
+    Reads are bounded in number; a stalled native driver can still block a read.
+    """
+    candidates = [backend]
+    if backend == "auto":
+        candidates = ["dshow", "msmf"] if platform.system() == "Windows" else ["default"]
+    failures = []
+    for candidate in candidates:
+        capture = None
+        ready = False
+        reason = "device could not be opened"
+        try:
+            if candidate == "default":
+                capture = cv2.VideoCapture(index)
+            else:
+                backend_id = getattr(cv2, f"CAP_{candidate.upper()}", None)
+                if backend_id is None:
+                    failures.append(f"{candidate}: backend is unavailable in this OpenCV build")
+                    continue
+                capture = cv2.VideoCapture(index, backend_id)
+            if capture.isOpened():
+                for attempt in range(CAMERA_WARMUP_READS):
+                    ok, frame = capture.read()
+                    if ok and valid_camera_frame(frame):
+                        ready = True
+                        return capture, frame, index, candidate
+                    if attempt + 1 < CAMERA_WARMUP_READS:
+                        time.sleep(0.05)
+                reason = f"frame read failed after {CAMERA_WARMUP_READS} attempts"
+        except (cv2.error, OSError) as error:
+            reason = f"capture failed ({error})"
+        finally:
+            if capture is not None and not ready:
+                try:
+                    capture.release()
+                except (cv2.error, OSError) as error:
+                    reason += f"; release failed ({error})"
+        failures.append(f"{candidate}: {reason}")
+    raise CameraOpenError(f"camera {index}: " + "; ".join(failures))
 
 
 def action_for_key(key: int, activity: str) -> tuple[str, str] | None:
@@ -128,7 +189,12 @@ def main() -> int:
                         help="disable inference so approved memories do not auto-execute while (re)learning")
     parser.add_argument("--active-app", default=None,
                         help="labels mode only: metadata override for the recorded app name")
-    parser.add_argument("--camera", type=int, default=0)
+    parser.add_argument("--camera", type=int, default=0,
+                        help="camera index (default: 0); choose the physical camera explicitly if needed")
+    parser.add_argument("--camera-backend", choices=["auto", "dshow", "msmf", "default"], default="auto",
+                        help="auto tries DirectShow then Media Foundation on Windows; default elsewhere")
+    parser.add_argument("--check-camera", action="store_true",
+                        help="check the first camera frame without the API server, keyboard hook, or preview")
     parser.add_argument("--threshold", type=float, default=1.0,
                         help="per-pixel horizontal flow magnitude that counts as motion")
     parser.add_argument("--min-motion-ratio", type=float, default=0.01,
@@ -143,20 +209,23 @@ def main() -> int:
         parser.error("--min-motion-ratio must be in (0, 1]")
     if args.stable_frames < 1:
         parser.error("--stable-frames must be at least 1")
-    if args.input_mode == "labels" and args.activity == "auto":
+    if args.camera < 0:
+        parser.error("--camera must be zero or greater")
+    if not args.check_camera and args.input_mode == "labels" and args.activity == "auto":
         parser.error("--input-mode labels needs an explicit --activity (presentation or music)")
-    if args.input_mode == "observe" and platform.system() != "Windows":
+    if not args.check_camera and args.input_mode == "observe" and platform.system() != "Windows":
         parser.error("--input-mode observe needs Windows; use --input-mode labels on this platform")
-    if args.input_mode == "observe" and args.active_app:
+    if not args.check_camera and args.input_mode == "observe" and args.active_app:
         parser.error("--input-mode observe reads the real active window; --active-app is labels only")
 
     simulation_url = args.api_url.split("/api/")[0]
-    print(f"Stable Simulation: open {simulation_url} in your browser. Q exits the camera.")
+    if not args.check_camera:
+        print(f"Stable Simulation: open {simulation_url} in your browser. Q exits the camera.")
     try:
         import cv2
         import numpy as np
     except ImportError:
-        print('Camera dependencies missing. Install: python -m pip install -e ".[camera]"', file=sys.stderr)
+        print('Camera dependencies missing. Install: python -m pip install -e "./backend[camera]"', file=sys.stderr)
         return 1
 
     request_activity = None if args.activity == "auto" else args.activity
@@ -172,26 +241,10 @@ def main() -> int:
         active_app = None
         key_help = "Q quit | use your usual keys in the app"
 
-    capture = cv2.VideoCapture(args.camera)
-    if not capture.isOpened():
-        capture.release()
-        print("Camera could not be opened: check device index and camera permissions. Use Stable Simulation above.", file=sys.stderr)
-        return 1
-
+    capture = None
     observer = None
-    if args.input_mode == "observe":
-        try:
-            observer = make_input_observer()
-            observer.start()
-        except OSError as error:
-            capture.release()
-            print(f"Real input observation could not start ({error}). Use --input-mode labels. Stable Simulation above.", file=sys.stderr)
-            return 1
-
+    preview_started = False
     previous_gray = None
-    background_model = cv2.createBackgroundSubtractorMOG2(
-        history=120, varThreshold=25, detectShadows=False
-    )
     direction_history: list[str] = []
     last_detection = 0.0
     detection_count = 0
@@ -201,12 +254,30 @@ def main() -> int:
     overlay = "Move one hand horizontally inside the guide"
 
     try:
+        capture, first_frame, selected_index, selected_backend = open_camera(cv2, args.camera, args.camera_backend)
+        height, width = first_frame.shape[:2]
+        print(f"Camera frame received: index={selected_index}, backend={selected_backend}, frame={width}x{height}.")
+        if args.check_camera:
+            return 0
+        if args.input_mode == "observe":
+            try:
+                observer = make_input_observer()
+                observer.start()
+            except OSError as error:
+                print(f"Real input observation could not start ({error}). Use --input-mode labels. Stable Simulation above.", file=sys.stderr)
+                return 1
+        background_model = cv2.createBackgroundSubtractorMOG2(
+            history=120, varThreshold=25, detectShadows=False
+        )
         post_json(f"{args.api_url}/demo/bootstrap", {})
         while True:
-            ok, frame = capture.read()
-            if not ok:
-                print("Camera frame read failed. Use Stable Simulation above.", file=sys.stderr)
-                return 1
+            if first_frame is not None:
+                frame, first_frame = first_frame, None
+            else:
+                ok, frame = capture.read()
+                if not ok or not valid_camera_frame(frame):
+                    print("Camera frame read failed. Use --check-camera to recheck the device. Stable Simulation above.", file=sys.stderr)
+                    return 1
             frame = cv2.flip(frame, 1)
             height, width = frame.shape[:2]
             x1, y1 = int(width * 0.18), int(height * 0.20)
@@ -304,6 +375,7 @@ def main() -> int:
             cv2.putText(frame, overlay[:85], (24, 38), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (255, 255, 255), 2)
             cv2.putText(frame, f"detections: {detection_count}", (24, 66), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (104, 224, 255), 2)
             cv2.putText(frame, key_help, (24, height - 24), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (220, 220, 220), 1)
+            preview_started = True
             cv2.imshow("SilentOrchestra 2.0 - Local Optical Flow", frame)
 
             key = cv2.waitKey(1) & 0xFF
@@ -316,17 +388,35 @@ def main() -> int:
                     overlay = _teach(args.api_url, args.user_id, pending_teach[0], intent, target)
                     print(overlay)
                     pending_teach = None
+    except CameraOpenError as error:
+        print(
+            f"Camera could not be opened: {error}. Select the physical camera with --camera INDEX; check camera permissions and other camera apps. "
+            "Browser label simulation is the stable fallback: open the browser UI and use Stable Simulation above.",
+            file=sys.stderr,
+        )
+        return 1
     except (requests.RequestException, ValueError, KeyError, TypeError) as error:
-        print(f"API request/response failed ({type(error).__name__}). No frames saved. Use Stable Simulation above; check the API server.", file=sys.stderr)
+        print(f"API request/response failed ({type(error).__name__}). No frames saved. Check the API server; --check-camera tests the camera separately. Use Stable Simulation above.", file=sys.stderr)
         return 1
     except cv2.error:
         print("Camera processing/display failed. Check camera permissions and display support. Use Stable Simulation above.", file=sys.stderr)
         return 1
     finally:
         if observer is not None:
-            observer.stop()
-        capture.release()
-        cv2.destroyAllWindows()
+            try:
+                observer.stop()
+            except OSError as error:
+                print(f"Real input observer cleanup failed ({error}).", file=sys.stderr)
+        if capture is not None:
+            try:
+                capture.release()
+            except (cv2.error, OSError) as error:
+                print(f"Camera cleanup failed ({error}).", file=sys.stderr)
+        if preview_started:
+            try:
+                cv2.destroyAllWindows()
+            except cv2.error as error:
+                print(f"Camera display cleanup failed ({error}).", file=sys.stderr)
 
     return 0
 

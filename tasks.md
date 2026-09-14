@@ -2,6 +2,13 @@
 
 ## 진행 중
 
+- [ ] 2026-09-14: 웹 대시보드에서 사용자 동의 기반 카메라 미리보기와 로컬 좌우 손짓 감지를 추가한다. 원본 프레임을 전송·저장하지 않고 기존 Observation 계약으로만 연동하며, 브라우저 권한·중지·오류와 감지 회귀를 검증한다.
+  - [x] 2026-09-14: `카메라 시작/중지`와 로컬 미리보기·좌우 모션 분석을 구현했다. 정지 화면 제외·합성 좌우 이동 감지 Node 회귀 테스트 4개를 통과했다.
+  - [x] 2026-09-14: 가상 카메라 대신 실제 장치를 고르는 `입력 장치` 선택기, 손바닥 펼치기(배경 대비 정지 전경 지속)·원형 움직임(전경 중심점 누적 회전각) 감지를 추가했다. Node 회귀 테스트 3개(전경 비율·중심점, 손바닥 재무장, 원형 완전한 한 바퀴 대 1/4 회전 미검출)를 통과했다.
+  - [ ] 2026-09-14: 브라우저 권한 허용 뒤 실제 `LGE Camera`를 선택기로 골라 네 가지 몸짓(swipe:right/left, open_palm:none, circle:clockwise) 모두에서 Observation 생성·중지 시 영상 트랙 해제를 수동 확인한다.
+- [ ] 2026-09-14: Windows 카메라 미표시 원인을 장치·권한·OpenCV 캡처 경로로 나누어 진단하고, 실제 프레임 수신을 검증한다. 카메라 초기화 실패의 복구와 회귀 테스트를 보완한다.
+  - [x] 2026-09-14: 첫 프레임 검증, Windows DirectShow→Media Foundation 전환, 실패 캡처 해제, `--check-camera` 진단과 회귀 테스트를 추가했다. 인덱스 2의 Mirametrix Virtual Camera는 DirectShow 640×480 프레임을 반환했다.
+  - [ ] 2026-09-14: 재부팅 뒤 실제 `LGE Camera`의 `IsRebootRequired`는 해소됐지만 인덱스 0·1은 첫 프레임을 반환하지 않는다. LG Secure Mode·물리 프라이버시 셔터·다른 앱의 점유를 해제한 뒤 `--check-camera --camera 0` 및 swipe 수용 기준을 다시 확인한다.
 - [ ] 2026-09-10: 현재 HEAD `edafa51` 기준 구조적 문제 수정: 앱 맥락 자동화, 실제 후속 조작 관측, 실측 embedding/유사도, 최근 학습·승자 강등·거절 억제·감지 오류 분리, 발표 Q&A 정합성 및 회귀 검증. 사용자 기준 `6b62db4`는 로컬에서 찾을 수 없음.
   - [x] 2026-09-10: 웹캠 클라이언트를 문서화된 계약에 맞췄다. `--input-mode observe|labels`, `--activity auto`, `--learn`, 실측 speed·amplitude 전송, 관측 모드의 5초·동일 맥락 첫 키 Teach 연결(`select_observed_teach`)을 구현하고 `input_observer`를 연결했다. `operations.md`의 존재하지 않는 플래그와 `fr-17-validation.md`의 옛 실행·수치를 갱신했다. pytest 78개 통과.
 - [ ] FR-17 웹캠: 감지 로직 구현 후 하드웨어 검증 중. 선택 경로 시연 시 발표 환경의 조명·배경·프레임률에서 좌우 swipe 품질을 확인하고 [Notion](https://ken-jeong.notion.site/wave-on) 상태를 갱신한다.

@@ -109,14 +109,17 @@ def test_incompatible_flag_combinations_are_rejected(monkeypatch, argv):
     assert exit_info.value.code == 2
 
 
-@pytest.mark.parametrize("opened,read_ok,api_error", [(False, False, False), (True, False, False), (True, False, True)])
+@pytest.mark.parametrize("opened,read_ok,api_error", [(False, False, False), (True, False, False), (True, True, True)])
 def test_failure_releases_camera_and_offers_simulation(monkeypatch, capsys, opened, read_ok, api_error, np):
     released = []
-    capture = SimpleNamespace(isOpened=lambda: opened, read=lambda: (read_ok, None), release=lambda: released.append(True))
+    frame = np.zeros((10, 10, 3), dtype=np.uint8) if read_ok else None
+    capture = SimpleNamespace(isOpened=lambda: opened, read=lambda: (read_ok, frame), release=lambda: released.append(True))
     fake_cv = SimpleNamespace(VideoCapture=lambda _: capture, createBackgroundSubtractorMOG2=lambda **_: None,
                               destroyAllWindows=lambda: None, error=RuntimeError)
     monkeypatch.setitem(sys.modules, "cv2", fake_cv)
-    monkeypatch.setattr(sys, "argv", ["webcam", "--input-mode", "labels", "--activity", "presentation"])
+    monkeypatch.setattr(sys, "argv", ["webcam", "--input-mode", "labels", "--activity", "presentation",
+                                     "--camera", "0", "--camera-backend", "default"])
+    monkeypatch.setattr(webcam.time, "sleep", lambda _: None)
     def post(*_):
         if api_error:
             raise requests.ConnectionError("offline")
@@ -127,6 +130,23 @@ def test_failure_releases_camera_and_offers_simulation(monkeypatch, capsys, open
     output = capsys.readouterr()
     assert "Stable Simulation" in output.out
     assert "failed" in output.err or "could not be opened" in output.err
+
+
+def test_open_failure_points_to_browser_label_simulation(monkeypatch, capsys, np):
+    released = []
+    capture = SimpleNamespace(isOpened=lambda: False, read=lambda: (False, None), release=lambda: released.append(True))
+    fake_cv = SimpleNamespace(VideoCapture=lambda _: capture, createBackgroundSubtractorMOG2=lambda **_: None,
+                              destroyAllWindows=lambda: None, error=RuntimeError)
+    monkeypatch.setitem(sys.modules, "cv2", fake_cv)
+    monkeypatch.setattr(sys, "argv", ["webcam", "--input-mode", "labels", "--activity", "presentation",
+                                     "--camera", "0", "--camera-backend", "default"])
+    monkeypatch.setattr(webcam, "post_json", lambda *_: {})
+
+    assert webcam.main() == 1
+    assert released == [True]
+    output = capsys.readouterr()
+    assert "Stable Simulation" in output.out
+    assert "Browser label simulation" in output.err
 
 
 @pytest.mark.parametrize("activity,next_action,previous_action", [

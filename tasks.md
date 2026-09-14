@@ -2,6 +2,8 @@
 
 ## 진행 중
 
+- [x] 2026-09-14: ERD·SQL 설계 문서(`docs/erd.md`, `backend/sql/schema.sql`)가 실제 `models.py`보다 뒤처져 있던 걸 재검증 후 반영. `gesture_observations.speed`·`amplitude`(FR-17 실측 입력, `CHECK (speed IS NULL) = (amplitude IS NULL)`)가 schema.sql·erd.md·seed.sql·queries.sql·tests.sql 어디에도 없었던 걸 schema.sql·erd.md에 추가(seed.sql은 컬럼 생략 시 NULL 기본값이라 수정 불필요). erd.md의 관계도에 `actions.user_id` 엣지, 누락됐던 인덱스 3개(`ix_contexts_user_activity`·`ix_observations_detected_at`·`ix_actions_user_type`)를 보완. `positive_feedback_count`/`negative_feedback_count`는 기록만 되고 어디서도 읽히지 않는 죽은 컬럼임을 확인했으나 그대로 두기로 함. `validate_sqlite.py` 재실행 38개 statement 통과, `pytest backend/tests` 114개 영향 없음.
+
 - [ ] 2026-09-14: 웹 대시보드에서 사용자 동의 기반 카메라 미리보기와 로컬 좌우 손짓 감지를 추가한다. 원본 프레임을 전송·저장하지 않고 기존 Observation 계약으로만 연동하며, 브라우저 권한·중지·오류와 감지 회귀를 검증한다.
   - [x] 2026-09-14: `카메라 시작/중지`와 로컬 미리보기·좌우 모션 분석을 구현했다. 정지 화면 제외·합성 좌우 이동 감지 Node 회귀 테스트 4개를 통과했다.
   - [x] 2026-09-14: 가상 카메라 대신 실제 장치를 고르는 `입력 장치` 선택기, 손바닥 펼치기(배경 대비 정지 전경 지속)·원형 움직임(전경 중심점 누적 회전각) 감지를 추가했다. Node 회귀 테스트 3개(전경 비율·중심점, 손바닥 재무장, 원형 완전한 한 바퀴 대 1/4 회전 미검출)를 통과했다.

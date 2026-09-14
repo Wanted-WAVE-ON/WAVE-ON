@@ -26,8 +26,13 @@ CREATE TABLE gesture_observations (
     motion_type TEXT NOT NULL,
     direction TEXT NOT NULL DEFAULT 'none',
     duration_ms INTEGER NOT NULL CHECK (duration_ms >= 0),
+    -- Real ROI-relative measurements (FR-17 webcam path); NULL together for
+    -- simulated/legacy input, both present when the client measured motion.
+    speed REAL,
+    amplitude REAL,
     frame_stored INTEGER NOT NULL DEFAULT 0 CHECK (frame_stored = 0),
     detected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK ((speed IS NULL) = (amplitude IS NULL)),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (context_id) REFERENCES contexts(id) ON DELETE CASCADE
 );

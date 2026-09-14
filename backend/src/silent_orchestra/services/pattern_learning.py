@@ -1,3 +1,4 @@
+import math
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
@@ -31,6 +32,21 @@ def _confidence(winner_count: int, total_count: int, recency_factor: float) -> f
     consistency = winner_count / total_count
     score = 0.35 + (0.10 * min(winner_count, 5)) + (0.22 * consistency)
     return round(min(0.99, score * recency_factor), 3)
+
+
+def _ranked_by_recency(rows, now: datetime) -> list[tuple[str, float]]:
+    """Vote per intent weighted by how recent each supporting action is, most
+    weight first (SPEC C-2 residual): a raw count alone lets an intent that was
+    dominant early in the 30-day window keep outranking a newer, smaller but
+    more recent run of a different intent for as long as the window holds
+    both. ``_recency_weight`` already discounts old evidence in confidence;
+    this reuses the same weight to decide *who* is currently the habit."""
+    scores: dict[str, float] = {}
+    for row in rows:
+        scores[row.Action.action_type] = (
+            scores.get(row.Action.action_type, 0.0) + _recency_weight(row.Action.executed_at, now)
+        )
+    return sorted(scores.items(), key=lambda item: item[1], reverse=True)
 
 
 def check_intent_change(db: Session, pattern: GesturePattern, intent: str, field: str) -> None:
@@ -97,9 +113,15 @@ def record_user_action(
         .limit(MAX_LEARNING_ACTIONS)
     ).all()
 
-    ranked_actions = Counter(row.Action.action_type for row in rows).most_common(2)
-    winning_intent, winning_count = ranked_actions[0]
-    has_unique_winner = len(ranked_actions) == 1 or winning_count > ranked_actions[1][1]
+    raw_counts = Counter(row.Action.action_type for row in rows)
+    ranked = _ranked_by_recency(rows, now)
+    winning_intent, winning_score = ranked[0]
+    winning_count = raw_counts[winning_intent]
+    # A near-identical score (within sub-second recency noise) is still a tie;
+    # only a real recency or count gap counts as a unique winner.
+    has_unique_winner = len(ranked) == 1 or not math.isclose(
+        winning_score, ranked[1][1], rel_tol=1e-6, abs_tol=1e-6
+    )
     winning_rows = [row for row in rows if row.Action.action_type == winning_intent]
     recency_factor = sum(
         _recency_weight(row.Action.executed_at, now) for row in winning_rows

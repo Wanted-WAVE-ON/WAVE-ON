@@ -329,6 +329,10 @@ function detectHorizontalMotion(previous, current, width, height) {
   return { direction: displacement > 0 ? "right" : "left", displacement, ratio: movingSamples / samples };
 }
 
+function clampFeature(value) {
+  return Math.min(10, Number(value.toFixed(3)));
+}
+
 // Coarser than detectHorizontalMotion: just "how much changed, and where" -
 // enough to notice a large still object (open palm) or a moving blob's path
 // (circle) without the swipe detector's directional block matching.
@@ -417,7 +421,7 @@ function trackCircleMotion(field, timestamp) {
   cameraCircleSamples = cameraCircleSamples.filter((sample) => sample.t >= cutoff);
   const { rotation, radius } = computeCircleRotation(cameraCircleSamples);
   if (radius < CAMERA_CIRCLE_MIN_RADIUS || Math.abs(rotation) < CAMERA_CIRCLE_MIN_ROTATION) return null;
-  return { durationMs: timestamp - cameraCircleSamples[0].t };
+  return { durationMs: timestamp - cameraCircleSamples[0].t, radius, rotation };
 }
 
 function setCameraStatus(message, state = "idle") {
@@ -511,17 +515,23 @@ function processCameraFrame(timestamp) {
   }
 
   if (circle) {
+    // Radius and angular speed are genuine per-person shape signals (how big
+    // and how fast someone draws the loop), unlike open_palm's plain hold -
+    // so, like swipe, encode them instead of sending bare motion_type/direction.
+    const circleDurationMs = Math.max(1, Math.round(circle.durationMs));
+    const circleAmplitude = clampFeature(circle.radius / CAMERA_SAMPLE_WIDTH);
+    const circleSpeed = clampFeature(Math.abs(circle.rotation) / (circleDurationMs / 1000));
     cameraLastDetectionAt = timestamp;
     setCameraStatus("원형 움직임을 인식했습니다. 다음 행동을 선택해 주세요.", "active");
     resetCameraMotion();
-    submitCameraGesture("circle", "clockwise", Math.round(circle.durationMs));
+    submitCameraGesture("circle", "clockwise", circleDurationMs, circleSpeed, circleAmplitude);
     return;
   }
 
   if (!ready || cameraDirectionHistory.length < CAMERA_STABLE_SAMPLES) return;
   const durationMs = Math.max(1, Math.round(timestamp - cameraMotionStartAt));
-  const speed = Math.min(10, Number((cameraMotionDistance / CAMERA_SAMPLE_WIDTH / (durationMs / 1000)).toFixed(3)));
-  const amplitude = Math.min(10, Number((cameraMotionDistance / CAMERA_SAMPLE_WIDTH).toFixed(3)));
+  const speed = clampFeature(cameraMotionDistance / CAMERA_SAMPLE_WIDTH / (durationMs / 1000));
+  const amplitude = clampFeature(cameraMotionDistance / CAMERA_SAMPLE_WIDTH);
   const direction = cameraDirectionHistory[0];
   cameraLastDetectionAt = timestamp;
   setCameraStatus(`${direction === "right" ? "오른쪽" : "왼쪽"} 손짓을 관찰했습니다. 다음 행동을 선택해 주세요.`, "active");

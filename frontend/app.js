@@ -35,6 +35,11 @@ const gestureSymbols = {
   "circle:clockwise": "○",
 };
 
+// Reserved hands-free confirm gestures (backend: services/confirmation.py) -
+// they answer a pending suggestion or recent execution instead of being
+// taught as a new gesture, so they skip the usual "what did you do next" step.
+const CONFIRM_GESTURES = new Set(["open_palm:none", "circle:clockwise"]);
+
 let currentContext = "presentation";
 let lastObservation = null;
 let lastGestureLabel = null;
@@ -44,11 +49,55 @@ let dashboardState = null;
 let dashboardRequest = null;
 let suggestionSignature = null;
 let lastGestureButton = null;
+let cameraStream = null;
+let cameraCanvas = null;
+let cameraContext = null;
+let cameraPreviousFrame = null;
+let cameraAnimationFrame = null;
+let cameraLastSampleAt = 0;
+let cameraMotionStartAt = null;
+let cameraMotionDistance = 0;
+let cameraDirectionHistory = [];
+let cameraLastDetectionAt = 0;
+let cameraSubmitting = false;
+let cameraDeviceId = "";
+let cameraBackgroundFrame = null;
+let cameraPalmStableCount = 0;
+let cameraPalmActive = false;
+let cameraCircleSamples = [];
 // Filled from /demo/bootstrap so the labels have one source of truth.
 let intentLabels = {};
 let autoExecutionThreshold = 0.6;
 let osActionsEnabled = false;
 let demoModeEnabled = true;
+
+const CAMERA_SAMPLE_WIDTH = 160;
+const CAMERA_SAMPLE_HEIGHT = 90;
+const CAMERA_SAMPLE_INTERVAL_MS = 90;
+const CAMERA_STABLE_SAMPLES = 3;
+const CAMERA_COOLDOWN_MS = 1200;
+// A slow exponential-average "background" plate lets us tell a large object
+// that just entered frame (a raised palm) apart from ordinary frame noise -
+// the same idea as the Python client's cv2 MOG2 subtractor, done per-pixel.
+const CAMERA_BACKGROUND_ALPHA = 0.05;
+const CAMERA_MOTION_THRESHOLD = 20;
+const CAMERA_BACKGROUND_THRESHOLD = 26;
+const CAMERA_PALM_COVERAGE_RATIO = 0.35;
+const CAMERA_PALM_STILL_RATIO = 0.05;
+const CAMERA_PALM_RESET_RATIO = 0.15;
+const CAMERA_PALM_STABLE_SAMPLES = 5;
+const CAMERA_CIRCLE_MIN_RATIO = 0.015;
+const CAMERA_CIRCLE_MAX_RATIO = 0.4;
+const CAMERA_CIRCLE_WINDOW_MS = 2600;
+const CAMERA_CIRCLE_GAP_MS = 350;
+const CAMERA_CIRCLE_MIN_RADIUS = 6;
+const CAMERA_CIRCLE_MIN_ROTATION = Math.PI * 1.6;
+const CAMERA_GESTURE_LABELS = {
+  "swipe:right": "오른쪽 손짓",
+  "swipe:left": "왼쪽 손짓",
+  "open_palm:none": "손바닥 펼치기",
+  "circle:clockwise": "원형 움직임",
+};
 
 const byId = (id) => document.getElementById(id);
 const all = (selector, root = document) => root.querySelectorAll(selector);
@@ -144,68 +193,415 @@ function renderActionButtons() {
   });
 }
 
+async function processObservation(result, motion, direction, label, symbol) {
+  lastGestureLabel = label;
+  lastGestureSymbol = symbol;
+  lastObservation = result.observation;
+
+  if (CONFIRM_GESTURES.has(`${motion}:${direction}`)) {
+    setAgentState(
+      result.inference.matched ? "success" : "",
+      result.inference.matched ? "확인했어요" : "확인 몸짓",
+      result.inference.reason,
+    );
+    showToast(result.inference.reason);
+    lastObservation = null;
+    renderActionButtons();
+    await refreshDashboard();
+    return;
+  }
+
+  if (result.inference.matched) {
+    lastExecution = result.inference.execution;
+    const failed = result.inference.execution?.status === "FAILED";
+    setAgentState(
+      failed ? "" : "success",
+      failed ? `${intentLabel(result.inference.intent)} 실행 실패` : intentLabel(result.inference.intent),
+      failed ? executionError(result.inference.execution) : result.inference.reason,
+    );
+    showActionOverlay(result.inference);
+    lastObservation = null;
+    updateTeachingCard(
+      failed ? "자동 실행 실패" : "자동 실행 완료",
+      failed
+        ? "의도는 추론했지만 동작을 전달하지 못했습니다. 아래 사유를 확인해 주세요."
+        : "Agent가 현재 맥락과 개인 기억을 바탕으로 의도를 추론했습니다.",
+    );
+  } else {
+    setAgentState(
+      "",
+      "다음 행동을 알려주세요",
+      "몸짓 직후 실제로 하려던 행동을 선택하면 반복 패턴을 학습합니다.",
+    );
+    updateTeachingCard(`${lastGestureLabel} 관찰 완료`, "이 몸짓 직후 사용자가 한 행동을 선택해 주세요.");
+    renderActionButtons();
+  }
+  await refreshDashboard();
+}
+
+function observationPayload(motion, direction, durationMs, speed, amplitude) {
+  const context = contextDefinitions[currentContext];
+  return {
+    user_id: USER_ID,
+    context: {
+      active_app: context.app,
+      activity: currentContext,
+      space: context.space,
+      device: "laptop",
+    },
+    gesture: {
+      motion_type: motion,
+      direction,
+      duration_ms: durationMs,
+      ...(speed === undefined ? {} : { speed, amplitude }),
+    },
+    attempt_inference: true,
+  };
+}
+
 async function observeGesture(button) {
   const motion = button.dataset.motion;
   const direction = button.dataset.direction;
-  lastGestureLabel = button.dataset.label;
-  lastGestureSymbol = gestureSymbols[`${motion}:${direction}`] || "?";
   lastGestureButton = button;
   all(".gesture-button").forEach((item) => item.classList.remove("active"));
   button.classList.add("active");
-  setAgentState(
-    "listening",
-    "동작을 관찰하고 있어요",
-    "모션 특징과 현재 상황만 분석합니다. 원본 프레임은 저장하지 않습니다.",
-  );
+  setAgentState("listening", "동작을 관찰하고 있어요", "모션 특징과 현재 상황만 분석합니다. 원본 프레임은 저장하지 않습니다.");
 
   await withBusy([button], async () => {
     try {
-      const context = contextDefinitions[currentContext];
-      const result = await post("/observe", {
-        user_id: USER_ID,
-        context: {
-          active_app: context.app,
-          activity: currentContext,
-          space: context.space,
-          device: "laptop",
-        },
-        gesture: { motion_type: motion, direction, duration_ms: 430 },
-        attempt_inference: true,
-      });
-      lastObservation = result.observation;
-
-      if (result.inference.matched) {
-        lastExecution = result.inference.execution;
-        const failed = result.inference.execution?.status === "FAILED";
-        setAgentState(
-          failed ? "" : "success",
-          failed ? `${intentLabel(result.inference.intent)} 실행 실패` : intentLabel(result.inference.intent),
-          failed ? executionError(result.inference.execution) : result.inference.reason,
-        );
-        showActionOverlay(result.inference);
-        lastObservation = null;
-        updateTeachingCard(
-          failed ? "자동 실행 실패" : "자동 실행 완료",
-          failed
-            ? "의도는 추론했지만 동작을 전달하지 못했습니다. 아래 사유를 확인해 주세요."
-            : "Agent가 현재 맥락과 개인 기억을 바탕으로 의도를 추론했습니다.",
-        );
-      } else {
-        setAgentState(
-          "",
-          "다음 행동을 알려주세요",
-          "몸짓 직후 실제로 하려던 행동을 선택하면 반복 패턴을 학습합니다.",
-        );
-        updateTeachingCard(`${lastGestureLabel} 관찰 완료`, "이 몸짓 직후 사용자가 한 행동을 선택해 주세요.");
-        renderActionButtons();
-      }
-      await refreshDashboard();
+      const result = await post("/observe", observationPayload(motion, direction, 430));
+      await processObservation(result, motion, direction, button.dataset.label, gestureSymbols[`${motion}:${direction}`] || "?");
     } catch (error) {
       showToast(`관찰 실패: ${error.message}`);
       button.dataset.state = "error";
       setAgentState("", "다시 시도해 주세요", "API 연결 상태와 서버 로그를 확인해 주세요.");
     }
   });
+}
+
+function luminance(frame, offset) {
+  return (frame[offset] * 0.2126) + (frame[offset + 1] * 0.7152) + (frame[offset + 2] * 0.0722);
+}
+
+function detectHorizontalMotion(previous, current, width, height) {
+  if (!previous || !current || previous.length !== current.length) return null;
+  const searchRadius = 6;
+  const sampleStep = 2;
+  let samples = 0;
+  let movingSamples = 0;
+  let horizontalGain = 0;
+  let verticalGain = 0;
+  let weightedDisplacement = 0;
+
+  for (let y = searchRadius; y < height - searchRadius; y += sampleStep) {
+    for (let x = searchRadius; x < width - searchRadius; x += sampleStep) {
+      const offset = ((y * width) + x) * 4;
+      const currentValue = luminance(current, offset);
+      const stationaryError = Math.abs(currentValue - luminance(previous, offset));
+      samples += 1;
+      if (stationaryError < 24) continue;
+
+      let bestHorizontalError = stationaryError;
+      let bestHorizontalShift = 0;
+      let bestVerticalError = stationaryError;
+      for (let shift = -searchRadius; shift <= searchRadius; shift += 1) {
+        const horizontalOffset = ((y * width) + (x - shift)) * 4;
+        const verticalOffset = (((y - shift) * width) + x) * 4;
+        const horizontalError = Math.abs(currentValue - luminance(previous, horizontalOffset));
+        const verticalError = Math.abs(currentValue - luminance(previous, verticalOffset));
+        if (horizontalError < bestHorizontalError) {
+          bestHorizontalError = horizontalError;
+          bestHorizontalShift = shift;
+        }
+        if (verticalError < bestVerticalError) bestVerticalError = verticalError;
+      }
+
+      const horizontalImprovement = stationaryError - bestHorizontalError;
+      const verticalImprovement = stationaryError - bestVerticalError;
+      if (Math.abs(bestHorizontalShift) < 1 || horizontalImprovement < 12) continue;
+      movingSamples += 1;
+      horizontalGain += horizontalImprovement;
+      verticalGain += Math.max(0, verticalImprovement);
+      weightedDisplacement += bestHorizontalShift * horizontalImprovement;
+    }
+  }
+
+  if (!samples || !horizontalGain || movingSamples / samples < 0.004 || horizontalGain <= verticalGain * 1.1) return null;
+  const displacement = weightedDisplacement / horizontalGain;
+  if (Math.abs(displacement) < 1) return null;
+  return { direction: displacement > 0 ? "right" : "left", displacement, ratio: movingSamples / samples };
+}
+
+function clampFeature(value) {
+  return Math.min(10, Number(value.toFixed(3)));
+}
+
+// Coarser than detectHorizontalMotion: just "how much changed, and where" -
+// enough to notice a large still object (open palm) or a moving blob's path
+// (circle) without the swipe detector's directional block matching.
+function analyzeMotionField(previous, current, width, height, threshold) {
+  if (!previous || !current || previous.length !== current.length) return null;
+  let count = 0;
+  let sumX = 0;
+  let sumY = 0;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = ((y * width) + x) * 4;
+      const diff = Math.abs(luminance(current, offset) - luminance(previous, offset));
+      if (diff < threshold) continue;
+      count += 1;
+      sumX += x;
+      sumY += y;
+    }
+  }
+  const total = width * height;
+  if (!count) return { ratio: 0, centroidX: null, centroidY: null };
+  return { ratio: count / total, centroidX: sumX / count, centroidY: sumY / count };
+}
+
+function updateCameraBackground(frame) {
+  if (!cameraBackgroundFrame) {
+    cameraBackgroundFrame = Float32Array.from(frame);
+    return;
+  }
+  for (let i = 0; i < frame.length; i += 1) {
+    cameraBackgroundFrame[i] += (frame[i] - cameraBackgroundFrame[i]) * CAMERA_BACKGROUND_ALPHA;
+  }
+}
+
+// A palm filling the frame shows up as (a) a big departure from the learned
+// background and (b) very little further change once it is held still.
+function trackOpenPalm(background, field, timestamp) {
+  if (!background) return null;
+  const filling = background.ratio >= CAMERA_PALM_COVERAGE_RATIO;
+  const still = !field || field.ratio <= CAMERA_PALM_STILL_RATIO;
+  cameraPalmStableCount = filling && still ? cameraPalmStableCount + 1 : 0;
+  if (background.ratio < CAMERA_PALM_RESET_RATIO) cameraPalmActive = false;
+  if (cameraPalmActive || cameraPalmStableCount < CAMERA_PALM_STABLE_SAMPLES) return null;
+  cameraPalmActive = true;
+  return { coverage: background.ratio };
+}
+
+// Sums the signed angle a moving blob's centroid sweeps around its own
+// trajectory's centre; a full loop (either sense) means "circle".
+function computeCircleRotation(samples) {
+  if (samples.length < 4) return { rotation: 0, radius: 0 };
+  let cx = 0;
+  let cy = 0;
+  samples.forEach((sample) => {
+    cx += sample.x;
+    cy += sample.y;
+  });
+  cx /= samples.length;
+  cy /= samples.length;
+  let rotation = 0;
+  let radiusSum = 0;
+  let previousAngle = null;
+  samples.forEach((sample) => {
+    const dx = sample.x - cx;
+    const dy = sample.y - cy;
+    radiusSum += Math.hypot(dx, dy);
+    const angle = Math.atan2(dy, dx);
+    if (previousAngle !== null) {
+      let delta = angle - previousAngle;
+      if (delta > Math.PI) delta -= Math.PI * 2;
+      if (delta < -Math.PI) delta += Math.PI * 2;
+      rotation += delta;
+    }
+    previousAngle = angle;
+  });
+  return { rotation, radius: radiusSum / samples.length };
+}
+
+function trackCircleMotion(field, timestamp) {
+  const inBand = field && field.ratio >= CAMERA_CIRCLE_MIN_RATIO && field.ratio <= CAMERA_CIRCLE_MAX_RATIO;
+  if (!inBand) {
+    if (cameraCircleSamples.length && timestamp - cameraCircleSamples.at(-1).t > CAMERA_CIRCLE_GAP_MS) cameraCircleSamples = [];
+    return null;
+  }
+  cameraCircleSamples.push({ x: field.centroidX, y: field.centroidY, t: timestamp });
+  const cutoff = timestamp - CAMERA_CIRCLE_WINDOW_MS;
+  cameraCircleSamples = cameraCircleSamples.filter((sample) => sample.t >= cutoff);
+  const { rotation, radius } = computeCircleRotation(cameraCircleSamples);
+  if (radius < CAMERA_CIRCLE_MIN_RADIUS || Math.abs(rotation) < CAMERA_CIRCLE_MIN_ROTATION) return null;
+  return { durationMs: timestamp - cameraCircleSamples[0].t, radius, rotation };
+}
+
+function setCameraStatus(message, state = "idle") {
+  byId("cameraStatus").textContent = message;
+  byId("cameraPreview").dataset.state = state;
+  byId("cameraMode").textContent = state === "active" ? "Local camera" : state === "error" ? "Camera error" : "Camera off";
+  byId("cameraLive").hidden = state !== "active";
+}
+
+async function populateCameraDevices(activeDeviceId) {
+  const select = byId("cameraDeviceSelect");
+  const devices = (await navigator.mediaDevices.enumerateDevices()).filter((device) => device.kind === "videoinput");
+  select.innerHTML = devices.map((device, index) => (
+    `<option value="${device.deviceId}">${device.label || `카메라 ${index + 1}`}</option>`
+  )).join("");
+  select.disabled = !devices.length;
+  const matchingDevice = devices.some((device) => device.deviceId === activeDeviceId);
+  if (matchingDevice) select.value = activeDeviceId;
+  cameraDeviceId = select.value || "";
+}
+
+function resetCameraMotion() {
+  cameraPreviousFrame = null;
+  cameraMotionStartAt = null;
+  cameraMotionDistance = 0;
+  cameraDirectionHistory = [];
+  cameraPalmStableCount = 0;
+  cameraCircleSamples = [];
+}
+
+async function submitCameraGesture(motion, direction, durationMs, speed, amplitude) {
+  if (cameraSubmitting) return;
+  cameraSubmitting = true;
+  try {
+    const result = await post("/observe", observationPayload(motion, direction, durationMs, speed, amplitude));
+    const label = CAMERA_GESTURE_LABELS[`${motion}:${direction}`] || `${motion} 손짓`;
+    await processObservation(result, motion, direction, label, gestureSymbols[`${motion}:${direction}`] || "?");
+  } catch (error) {
+    showToast(`카메라 관찰 실패: ${error.message}`);
+    setAgentState("", "다시 시도해 주세요", "서버 연결 상태를 확인해 주세요.");
+  } finally {
+    cameraSubmitting = false;
+  }
+}
+
+function processCameraFrame(timestamp) {
+  if (!cameraStream) return;
+  cameraAnimationFrame = window.requestAnimationFrame(processCameraFrame);
+  const video = byId("cameraVideo");
+  if (video.readyState < 2 || timestamp - cameraLastSampleAt < CAMERA_SAMPLE_INTERVAL_MS) return;
+  cameraLastSampleAt = timestamp;
+  cameraContext.save();
+  cameraContext.translate(CAMERA_SAMPLE_WIDTH, 0);
+  cameraContext.scale(-1, 1);
+  cameraContext.drawImage(video, 0, 0, CAMERA_SAMPLE_WIDTH, CAMERA_SAMPLE_HEIGHT);
+  cameraContext.restore();
+  const frame = cameraContext.getImageData(0, 0, CAMERA_SAMPLE_WIDTH, CAMERA_SAMPLE_HEIGHT).data;
+
+  const motion = detectHorizontalMotion(cameraPreviousFrame, frame, CAMERA_SAMPLE_WIDTH, CAMERA_SAMPLE_HEIGHT);
+  const field = analyzeMotionField(cameraPreviousFrame, frame, CAMERA_SAMPLE_WIDTH, CAMERA_SAMPLE_HEIGHT, CAMERA_MOTION_THRESHOLD);
+  const background = analyzeMotionField(cameraBackgroundFrame, frame, CAMERA_SAMPLE_WIDTH, CAMERA_SAMPLE_HEIGHT, CAMERA_BACKGROUND_THRESHOLD);
+  updateCameraBackground(frame);
+  cameraPreviousFrame = new Uint8ClampedArray(frame);
+
+  const ready = timestamp - cameraLastDetectionAt >= CAMERA_COOLDOWN_MS;
+  const palm = ready ? trackOpenPalm(background, field, timestamp) : null;
+  const circle = ready && !palm ? trackCircleMotion(field, timestamp) : null;
+
+  if (!motion) {
+    cameraDirectionHistory = [];
+    cameraMotionStartAt = null;
+    cameraMotionDistance = 0;
+  } else {
+    if (cameraDirectionHistory.at(-1) !== motion.direction) {
+      cameraDirectionHistory = [];
+      cameraMotionStartAt = timestamp;
+      cameraMotionDistance = 0;
+    }
+    cameraDirectionHistory.push(motion.direction);
+    cameraDirectionHistory = cameraDirectionHistory.slice(-CAMERA_STABLE_SAMPLES);
+    cameraMotionDistance += Math.abs(motion.displacement);
+    setCameraStatus(`${motion.direction === "right" ? "오른쪽" : "왼쪽"} 손짓을 분석 중입니다.`, "active");
+  }
+
+  if (palm) {
+    cameraLastDetectionAt = timestamp;
+    setCameraStatus("손바닥 펼치기를 인식했습니다. 다음 행동을 선택해 주세요.", "active");
+    resetCameraMotion();
+    submitCameraGesture("open_palm", "none", CAMERA_PALM_STABLE_SAMPLES * CAMERA_SAMPLE_INTERVAL_MS);
+    return;
+  }
+
+  if (circle) {
+    // Radius and angular speed are genuine per-person shape signals (how big
+    // and how fast someone draws the loop), unlike open_palm's plain hold -
+    // so, like swipe, encode them instead of sending bare motion_type/direction.
+    const circleDurationMs = Math.max(1, Math.round(circle.durationMs));
+    const circleAmplitude = clampFeature(circle.radius / CAMERA_SAMPLE_WIDTH);
+    const circleSpeed = clampFeature(Math.abs(circle.rotation) / (circleDurationMs / 1000));
+    cameraLastDetectionAt = timestamp;
+    setCameraStatus("원형 움직임을 인식했습니다. 다음 행동을 선택해 주세요.", "active");
+    resetCameraMotion();
+    submitCameraGesture("circle", "clockwise", circleDurationMs, circleSpeed, circleAmplitude);
+    return;
+  }
+
+  if (!ready || cameraDirectionHistory.length < CAMERA_STABLE_SAMPLES) return;
+  const durationMs = Math.max(1, Math.round(timestamp - cameraMotionStartAt));
+  const speed = clampFeature(cameraMotionDistance / CAMERA_SAMPLE_WIDTH / (durationMs / 1000));
+  const amplitude = clampFeature(cameraMotionDistance / CAMERA_SAMPLE_WIDTH);
+  const direction = cameraDirectionHistory[0];
+  cameraLastDetectionAt = timestamp;
+  setCameraStatus(`${direction === "right" ? "오른쪽" : "왼쪽"} 손짓을 관찰했습니다. 다음 행동을 선택해 주세요.`, "active");
+  resetCameraMotion();
+  submitCameraGesture("swipe", direction, durationMs, speed, amplitude);
+}
+
+async function startCamera(restart = false) {
+  if (cameraStream && !restart) return;
+  const startButton = byId("startCameraButton");
+  const stopButton = byId("stopCameraButton");
+  try {
+    if (cameraStream) stopCamera(false);
+    startButton.disabled = true;
+    setCameraStatus("카메라 권한을 요청하는 중입니다.");
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        ...(cameraDeviceId ? { deviceId: { exact: cameraDeviceId } } : { facingMode: "user" }),
+        width: { ideal: 640 },
+        height: { ideal: 480 },
+      },
+    });
+    const video = byId("cameraVideo");
+    video.srcObject = cameraStream;
+    await video.play();
+    const activeDeviceId = cameraStream.getVideoTracks()[0]?.getSettings().deviceId;
+    await populateCameraDevices(activeDeviceId);
+    cameraCanvas = document.createElement("canvas");
+    cameraCanvas.width = CAMERA_SAMPLE_WIDTH;
+    cameraCanvas.height = CAMERA_SAMPLE_HEIGHT;
+    cameraContext = cameraCanvas.getContext("2d", { willReadFrequently: true });
+    resetCameraMotion();
+    cameraBackgroundFrame = null;
+    cameraPalmActive = false;
+    cameraLastSampleAt = 0;
+    cameraLastDetectionAt = 0;
+    setCameraStatus("카메라가 이 브라우저에서만 동작 중입니다. 좌우 손짓, 손바닥 펼치기, 원형 움직임을 인식합니다.", "active");
+    stopButton.disabled = false;
+    cameraAnimationFrame = window.requestAnimationFrame(processCameraFrame);
+  } catch (error) {
+    stopCamera();
+    setCameraStatus(`카메라를 시작하지 못했습니다: ${error.message || "권한 또는 장치를 확인해 주세요."}`, "error");
+  } finally {
+    startButton.disabled = Boolean(cameraStream);
+  }
+}
+
+function stopCamera(updateStatus = true) {
+  if (cameraAnimationFrame !== null) window.cancelAnimationFrame(cameraAnimationFrame);
+  cameraAnimationFrame = null;
+  cameraStream?.getTracks().forEach((track) => track.stop());
+  cameraStream = null;
+  cameraCanvas = null;
+  cameraContext = null;
+  byId("cameraVideo").srcObject = null;
+  byId("startCameraButton").disabled = false;
+  byId("stopCameraButton").disabled = true;
+  resetCameraMotion();
+  cameraBackgroundFrame = null;
+  cameraPalmActive = false;
+  if (updateStatus) setCameraStatus("카메라가 중지됐습니다. 원본 영상은 저장하거나 전송하지 않았습니다.");
+}
+
+async function changeCameraDevice() {
+  cameraDeviceId = byId("cameraDeviceSelect").value;
+  await startCamera(true);
 }
 
 function updateTeachingCard(title, description) {
@@ -521,7 +917,10 @@ async function loadDashboard() {
   try {
   const state = await request(`/dashboard?user_id=${encodeURIComponent(USER_ID)}`);
   dashboardState = state;
-  const fromWebcam = state.context?.space === "camera_demo";
+  // The in-browser camera stream is authoritative when it's running locally;
+  // otherwise fall back to detecting the separate Python webcam client from
+  // the space it stamps on observations.
+  const fromWebcam = Boolean(cameraStream) || state.context?.space === "camera_demo";
   const modePill = byId("inputModePill");
   modePill.textContent = fromWebcam ? "웹캠 실시간 감지" : "버튼 시뮬레이션";
   modePill.dataset.source = fromWebcam ? "webcam" : "button";
@@ -657,6 +1056,11 @@ async function init() {
   all(".gesture-button").forEach((button) => {
     button.addEventListener("click", () => observeGesture(button));
   });
+  byId("startCameraButton").addEventListener("click", startCamera);
+  byId("stopCameraButton").addEventListener("click", stopCamera);
+  byId("cameraDeviceSelect").addEventListener("change", () => changeCameraDevice().catch((error) => {
+    setCameraStatus(`입력 장치를 바꾸지 못했습니다: ${error.message}`, "error");
+  }));
   byId("resetButton").addEventListener("click", resetDemo);
   all("[data-feedback]").forEach((button) => {
     button.addEventListener("click", () => submitFeedback(button.dataset.feedback));
@@ -704,3 +1108,4 @@ async function init() {
 }
 
 document.addEventListener("DOMContentLoaded", init);
+window.addEventListener?.("pagehide", stopCamera);

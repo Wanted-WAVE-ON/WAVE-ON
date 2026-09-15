@@ -506,7 +506,7 @@ def test_privacy_openapi_observe_contract_is_closed(client):
     expected = {
         "ObserveRequest": {"user_id", "context", "gesture", "attempt_inference"},
         "ContextInput": {"active_app", "activity", "space", "device"},
-        "GestureInput": {"motion_type", "direction", "duration_ms", "embedding"},
+        "GestureInput": {"motion_type", "direction", "duration_ms", "embedding", "speed", "amplitude"},
     }
     for name, fields in expected.items():
         model = schema["components"]["schemas"][name]
@@ -545,7 +545,8 @@ def test_privacy_db_rejects_raw_frame_insert_and_update(client, db_engine):
     columns = inspect(db_engine).get_columns("gesture_observations")
     assert {column["name"] for column in columns} == {
         "id", "user_id", "context_id", "gesture_key", "gesture_embedding",
-        "motion_type", "direction", "duration_ms", "frame_stored", "detected_at",
+        "motion_type", "direction", "duration_ms", "speed", "amplitude",
+        "frame_stored", "detected_at",
     }
     assert not any("BLOB" in str(column["type"]).upper() for column in columns)
     statements = [

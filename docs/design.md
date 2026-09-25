@@ -1,67 +1,33 @@
-# Design — SilentOrchestra 2.0
+# 디자인 규칙
 
-이 앱의 고정된 디자인 시스템입니다. 페이지를 다시 그릴 때마다 먼저 읽고, 페이지별 임의 테마는 만들지 않습니다.
-시스템을 넓혀야 하면 이 파일을 고칩니다.
+토큰 값은 [tokens.css](../frontend/tokens.css), 교환 형식은 [design-tokens.json](../design/design-tokens.json)이 소유합니다. 이 문서는 사용 규칙만 정의합니다.
 
-**토큰 값의 출처는 [`frontend/tokens.css`](../frontend/tokens.css)** 입니다(색·타입·간격·모션·radius·shadow·z-index 전체).
-DTCG 형식은 [`design/design-tokens.json`](../design/design-tokens.json). 이 문서는 값이 아니라
-**값만 봐서는 알 수 없는 규칙**을 담습니다.
+## 구조
 
-## Genre
+- 데스크톱: 맥락 레일 · 중앙 작업 · 기억 레일
+- 모바일: 중앙 작업을 먼저 배치
+- 단일 레이어와 얇은 구분선을 사용
+- 장식 구체·동심원·그라데이션·홍보 문구 금지
+- Agent Orb는 상태 옆의 작은 표시로 제한
 
-Atmospheric, with a technical Workbench voice. 캔버스는 어둡지만 페이지를 끌고 가는 것은 분위기가 아니라 기능입니다.
+## 의미
 
-## Macrostructure — Workbench
+- cyan: 주 동작, 화면의 5% 미만
+- violet: 학습·제안 상태만
+- error: 오류 텍스트와 상태
+- 색만으로 상태를 전달하지 않음
 
-주 작업 레일이 먼저 오고, 맥락과 학습된 근거가 데스크톱에서는 옆에, 모바일에서는 뒤에 붙습니다.
+## 타입·동작
 
-`primary=agent-flow`, `context=left-rail`, `evidence=right-rail`, `mobile=center-first`, `containment=single-layer`
-
-마케팅·콘텐츠 페이지는 현재 없습니다.
-
-워크벤치는 장식 구체·동심원·그라데이션·홍보 문구 없이 구성합니다. Agent Orb는 상태 옆의 작은 원으로 축소합니다. 상태 안내는 왼쪽 정렬하고, 제스처 입력을 화면 위쪽에서 바로 사용할 수 있도록 높이를 줄입니다. 좌측 맥락과 우측 기억은 얇은 구분선으로 나눕니다. 작은 화면에서는 중앙 작업 다음에 맥락과 기억을 배치합니다.
-
-## Theme — Night Signal
-
-- accent(cyan) 사용 면적은 뷰포트의 5% 미만으로 유지합니다.
-- `--color-learning`(violet)은 장식이 아닙니다. **suggestion·learning 상태만** 식별합니다.
-- 상태는 색만으로 전달하지 않고 항상 텍스트·아이콘을 병행합니다(WCAG AA).
-
-## Typography
-
-- Display: IBM Plex Sans KR 700, tracking -0.035em
+- Display: IBM Plex Sans KR 700
 - Body: Pretendard Variable 400–600
-- Outlier: IBM Plex Mono 500 — **wordmark와 live metric에만**
+- Mono: wordmark·실시간 지표만
+- 모션: 버튼 press와 상태 crossfade만, reduced motion은 opacity 120ms 이하
+- 포커스 표시와 44px 이상 터치 영역 유지
 
-`swap`으로 로드하며 한국어 시스템 폴백을 유지합니다.
+## 컨트롤
 
-## Motion
-
-- 프리미티브는 버튼 press와 상태 crossfade **둘뿐**입니다.
-- ambient loop와 page-load reveal은 없습니다.
-- reduced motion: opacity만, 최대 120ms.
-
-## Microinteractions
-
-- 결과 상태가 이미 화면에 보이면 성공은 조용히 처리합니다(토스트 없음).
-- 고정 토스트는 오류나 화면 밖 비동기 결과에만 씁니다.
-- 모든 컨트롤에 default·hover·focus·active·disabled·loading·error·success가 있습니다.
-- focus ring은 즉시 나타나고, 터치 타깃은 최소 44px입니다.
-
-## CTA
-
-- Primary: solid cyan, 어두운 텍스트, radius 10px, 구체적인 한국어 동사
-- Secondary: 어두운 raised 표면 + rule 보더, primary와 같은 높이·radius
-- Destructive: secondary 표면에 error 색 **텍스트**. 빨강으로 채운 버튼은 쓰지 않습니다.
-
-## 페이지 간 공유 / 차이
-
-| 항상 공유 | 달라도 되는 것 |
-|---|---|
-| SilentOrchestra 워드마크 | 밀도와 evidence 패널 개수 |
-| Night Signal 팔레트와 의미 역할 | 넓은 화면에서 sticky로 둘 레일 |
-| IBM Plex Sans KR + Pretendard 조합 | learning violet의 등장 여부 |
-| Workbench 버튼·필드 보이스 | |
-| 모바일 우선 주 작업 순서 | |
-
-앱 페이지는 enrichment를 쓰지 않습니다. 제품 상태 자체가 시각적 내용입니다.
+- Primary: solid cyan, 구체적인 한국어 동사
+- Secondary: 어두운 표면과 선
+- Destructive: 채우지 않고 error 색 텍스트
+- 성공 토스트는 생략하고 오류·화면 밖 비동기 결과만 고정 안내

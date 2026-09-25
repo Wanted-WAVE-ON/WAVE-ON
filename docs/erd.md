@@ -1,63 +1,33 @@
-# ERD 및 데이터 설계
+# 데이터 설계
 
-컬럼 정의의 출처는 [backend/sql/schema.sql](../backend/sql/schema.sql), 제약의 규범적 근거는
-[spec.md](../spec.md#맥락학습-fr-02-fr-04-fr-05-fr-07)입니다.
-
-## 1. 관계도
+컬럼의 원본은 [schema.sql](../backend/sql/schema.sql), 규칙은 [SPEC](../spec.md)입니다.
 
 ```mermaid
 erDiagram
-    USERS ||--o{ CONTEXTS : has
-    USERS ||--o{ GESTURE_OBSERVATIONS : creates
-    USERS ||--o{ ACTIONS : performs
-    CONTEXTS ||--o{ GESTURE_OBSERVATIONS : frames
-    GESTURE_OBSERVATIONS ||--o| ACTIONS : followed_by
-    USERS ||--o{ GESTURE_PATTERNS : owns
-    GESTURE_PATTERNS ||--o{ AGENT_SUGGESTIONS : generates
-    GESTURE_PATTERNS ||--o{ EXECUTIONS : drives
-    GESTURE_OBSERVATIONS ||--o{ EXECUTIONS : triggers
-    EXECUTIONS ||--o| FEEDBACK : receives
-    GESTURE_PATTERNS ||--o{ FEEDBACK : updates
+  USERS ||--o{ CONTEXTS : has
+  USERS ||--o{ GESTURE_OBSERVATIONS : creates
+  USERS ||--o{ ACTIONS : performs
+  CONTEXTS ||--o{ GESTURE_OBSERVATIONS : frames
+  GESTURE_OBSERVATIONS ||--o| ACTIONS : followed_by
+  USERS ||--o{ GESTURE_PATTERNS : owns
+  GESTURE_PATTERNS ||--o{ AGENT_SUGGESTIONS : generates
+  GESTURE_PATTERNS ||--o{ EXECUTIONS : drives
+  GESTURE_OBSERVATIONS ||--o{ EXECUTIONS : triggers
+  EXECUTIONS ||--o| FEEDBACK : receives
+  GESTURE_PATTERNS ||--o{ FEEDBACK : updates
 ```
 
-## 2. 테이블 역할
-
-| 테이블 | 역할 | 핵심 보존 데이터 |
-|---|---|---|
-| `users` | 개인화 기억의 소유자 | 식별자, 이름 |
-| `contexts` | 몸짓 발생 당시 상황(관찰마다 1건 스냅샷) | active app, activity, space, device |
-| `gesture_observations` | 관찰된 원시 행동 이벤트 | embedding, motion, direction, duration, speed·amplitude(실측 시에만) |
-| `actions` | 몸짓 직후 사용자가 수행한 행동 | action type, target, parameters |
-| `gesture_patterns` | Personal Gesture Memory 후보·활성 기억 | intent, context scope, confidence, count |
-| `agent_suggestions` | Agent가 제시한 학습 제안 | reason, confidence, status |
-| `executions` | 승인된 기억의 실행 감사 로그 | intent, result, mode, error |
-| `feedback` | 실행에 대한 사용자 평가 | correct, wrong, accidental, ignore |
-
-`space`는 관찰 시점 스냅샷 값으로만 기록되고 학습 단위는 `activity`입니다.
-`gesture_embedding`은 모션 특징 벡터이며 원본 영상이 아닙니다.
-`gesture_observations.speed`·`amplitude`는 FR-17 실측 입력(웹캠·브라우저 카메라)에서만 함께 채워지고, 시뮬레이션·라벨 입력에서는 둘 다 NULL입니다(`CHECK (speed IS NULL) = (amplitude IS NULL)`).
-
-## 3. 인덱스
-
-| 용도 | 인덱스 |
+| 테이블 | 역할 |
 |---|---|
-| Context별 관찰 조회 | `contexts(user_id, activity)` |
-| 관찰 검색 | `gesture_observations(user_id, gesture_key)` |
-| 최근 관찰 정렬 | `gesture_observations(detected_at)` |
-| 행동 유형 조회 | `actions(user_id, action_type)` |
-| 기억 추론 | `gesture_patterns(user_id, context_scope, status)` |
-| 제안함 | `agent_suggestions(user_id, status)` |
-| 실행 로그 | `executions(user_id, executed_at)` |
-| 피드백 분석 | `feedback(gesture_pattern_id, created_at)` |
+| `users` | 기억 소유자 |
+| `contexts` | 관찰 시점의 앱·활동·공간·기기 |
+| `gesture_observations` | 모션·방향·시간·embedding·선택적 속도/진폭 |
+| `actions` | 사용자의 후속 행동 |
+| `gesture_patterns` | 후보·활성 기억 |
+| `agent_suggestions` | 학습 제안과 응답 |
+| `executions` | 실행 결과 감사 로그 |
+| `feedback` | 실행 평가 |
 
-## 4. SQL 산출물
+`space`·`device`는 메타데이터이고 학습 단위는 `activity`입니다. `speed`와 `amplitude`는 함께 NULL이거나 함께 값이 있어야 합니다. 원본 영상 컬럼은 없습니다.
 
-| 파일 | 내용 |
-|---|---|
-| `backend/sql/schema.sql` | 8개 테이블, 8개 인덱스, 제약, Personal Gesture Memory view |
-| `backend/sql/seed.sql` | 맥락별 동일 제스처 샘플(설명·검증용 합성 데이터) |
-| `backend/sql/queries.sql` | Memory·Suggestion·Execution·Privacy 대표 조회 |
-| `backend/sql/tests.sql` | 외래키, 테이블 수, 원본 프레임 0건, 맥락 분기 assertion |
-| `backend/sql/validation-report.json` | 메모리 DB 전체 실행 결과 |
-
-검증 명령은 [README 테스트](../README.md#테스트), 실행 결과는 [TASKS 검증 기록](../tasks.md#검증-기록)에서 관리합니다.
+SQL 산출물은 `backend/sql/{schema,seed,queries,tests}.sql`이며 검증 명령은 [README](../README.md#테스트)에 있습니다.

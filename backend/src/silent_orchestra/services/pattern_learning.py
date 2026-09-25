@@ -1,5 +1,6 @@
 import math
 from collections import Counter
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
@@ -13,6 +14,18 @@ from .action_catalog import CONTEXT_INTENTS, action_label
 
 LEARNING_WINDOW = timedelta(days=30)
 MAX_LEARNING_ACTIONS = 20
+
+
+@dataclass(frozen=True)
+class _LearningEvidence:
+    intent: str
+    count: int
+    rows: list
+    has_unique_winner: bool
+    confidence: float
+    target: str
+    latest_observation: GestureObservation
+    embedding: list[float]
 
 
 def _utc(value: datetime) -> datetime:
@@ -47,6 +60,43 @@ def _ranked_by_recency(rows, now: datetime) -> list[tuple[str, float]]:
             scores.get(row.Action.action_type, 0.0) + _recency_weight(row.Action.executed_at, now)
         )
     return sorted(scores.items(), key=lambda item: item[1], reverse=True)
+
+
+def _summarize_evidence(rows, now: datetime) -> _LearningEvidence:
+    """Reduce recent action rows to the current winning habit."""
+    raw_counts = Counter(row.Action.action_type for row in rows)
+    ranked = _ranked_by_recency(rows, now)
+    intent, score = ranked[0]
+    winning_rows = [row for row in rows if row.Action.action_type == intent]
+    count = raw_counts[intent]
+    has_unique_winner = len(ranked) == 1 or not math.isclose(
+        score, ranked[1][1], rel_tol=1e-6, abs_tol=1e-6
+    )
+    recency_factor = sum(
+        _recency_weight(row.Action.executed_at, now) for row in winning_rows
+    ) / len(winning_rows)
+    latest_observation = winning_rows[0].GestureObservation
+    embedding_size = len(latest_observation.gesture_embedding)
+    embeddings = [
+        row.GestureObservation.gesture_embedding
+        for row in winning_rows
+        if len(row.GestureObservation.gesture_embedding) == embedding_size
+    ]
+    return _LearningEvidence(
+        intent=intent,
+        count=count,
+        rows=winning_rows,
+        has_unique_winner=has_unique_winner,
+        confidence=_confidence(count, len(rows), recency_factor),
+        # Rows are newest first, so Counter's insertion order breaks target
+        # ties using the most recent target.
+        target=Counter(row.Action.target for row in winning_rows).most_common(1)[0][0],
+        latest_observation=latest_observation,
+        embedding=[
+            round(sum(values) / len(embeddings), 6)
+            for values in zip(*embeddings, strict=True)
+        ],
+    )
 
 
 def check_intent_change(db: Session, pattern: GesturePattern, intent: str, field: str) -> None:
@@ -113,34 +163,7 @@ def record_user_action(
         .limit(MAX_LEARNING_ACTIONS)
     ).all()
 
-    raw_counts = Counter(row.Action.action_type for row in rows)
-    ranked = _ranked_by_recency(rows, now)
-    winning_intent, winning_score = ranked[0]
-    winning_count = raw_counts[winning_intent]
-    # A near-identical score (within sub-second recency noise) is still a tie;
-    # only a real recency or count gap counts as a unique winner.
-    has_unique_winner = len(ranked) == 1 or not math.isclose(
-        winning_score, ranked[1][1], rel_tol=1e-6, abs_tol=1e-6
-    )
-    winning_rows = [row for row in rows if row.Action.action_type == winning_intent]
-    recency_factor = sum(
-        _recency_weight(row.Action.executed_at, now) for row in winning_rows
-    ) / len(winning_rows)
-    confidence = _confidence(winning_count, len(rows), recency_factor)
-    # Rows are newest first, so Counter's insertion order breaks target ties
-    # using the most recent target rather than an arbitrary database row.
-    winning_target = Counter(row.Action.target for row in winning_rows).most_common(1)[0][0]
-    latest_winner = winning_rows[0].GestureObservation
-    embedding_size = len(latest_winner.gesture_embedding)
-    embeddings = [
-        row.GestureObservation.gesture_embedding
-        for row in winning_rows
-        if len(row.GestureObservation.gesture_embedding) == embedding_size
-    ]
-    winning_embedding = [
-        round(sum(values) / len(embeddings), 6)
-        for values in zip(*embeddings, strict=True)
-    ]
+    evidence = _summarize_evidence(rows, now)
 
     last_rejected_at = db.scalar(
         select(func.max(AgentSuggestion.responded_at))
@@ -149,13 +172,13 @@ def record_user_action(
             GesturePattern.user_id == request.user_id,
             GesturePattern.gesture_key == observation.gesture_key,
             GesturePattern.context_scope == context.activity,
-            AgentSuggestion.suggested_intent == winning_intent,
+            AgentSuggestion.suggested_intent == evidence.intent,
             AgentSuggestion.status == "REJECTED",
         )
     )
     fresh_count = sum(
         last_rejected_at is None or _utc(row.Action.executed_at) > _utc(last_rejected_at)
-        for row in winning_rows
+        for row in evidence.rows
     )
     rejection_cleared = last_rejected_at is None or fresh_count >= settings.suggestion_threshold
 
@@ -164,7 +187,7 @@ def record_user_action(
             GesturePattern.user_id == request.user_id,
             GesturePattern.gesture_key == observation.gesture_key,
             GesturePattern.context_scope == context.activity,
-            GesturePattern.intent == winning_intent,
+            GesturePattern.intent == evidence.intent,
         )
     )
 
@@ -173,23 +196,23 @@ def record_user_action(
             id=str(uuid4()),
             user_id=request.user_id,
             gesture_key=observation.gesture_key,
-            gesture_embedding=winning_embedding,
-            motion_type=latest_winner.motion_type,
-            direction=latest_winner.direction,
-            intent=winning_intent,
+            gesture_embedding=evidence.embedding,
+            motion_type=evidence.latest_observation.motion_type,
+            direction=evidence.latest_observation.direction,
+            intent=evidence.intent,
             context_scope=context.activity,
-            target=winning_target,
-            confidence=confidence,
-            observation_count=winning_count,
+            target=evidence.target,
+            confidence=evidence.confidence,
+            observation_count=evidence.count,
             auto_execute=False,
             status="CANDIDATE" if rejection_cleared else "REJECTED",
         )
         db.add(pattern)
     else:
-        pattern.gesture_embedding = winning_embedding
-        pattern.target = winning_target
-        pattern.confidence = confidence
-        pattern.observation_count = winning_count
+        pattern.gesture_embedding = evidence.embedding
+        pattern.target = evidence.target
+        pattern.confidence = evidence.confidence
+        pattern.observation_count = evidence.count
         if pattern.status == "REJECTED" and rejection_cleared:
             pattern.status = "CANDIDATE"
 
@@ -203,13 +226,15 @@ def record_user_action(
         )
     ).all()
     for item in scope_patterns:
-        if item.status == "ACTIVE" and (not has_unique_winner or item.id != pattern.id):
+        if item.status == "ACTIVE" and (
+            not evidence.has_unique_winner or item.id != pattern.id
+        ):
             item.status = "CANDIDATE"
             item.auto_execute = False
 
     eligible = (
-        has_unique_winner
-        and winning_count >= settings.suggestion_threshold
+        evidence.has_unique_winner
+        and evidence.count >= settings.suggestion_threshold
         and rejection_cleared
         and pattern.status != "ACTIVE"
     )
@@ -228,24 +253,24 @@ def record_user_action(
     if eligible:
         reason = (
             f"{context.activity} 상황에서 최근 30일 내 최대 20건의 조작 중 "
-            f"유사한 동작 후 '{action_label(winning_intent)}' 행동이 "
-            f"{winning_count}회 관찰되었습니다."
+            f"유사한 동작 후 '{action_label(evidence.intent)}' 행동이 "
+            f"{evidence.count}회 관찰되었습니다."
         )
         if suggestion is None:
             suggestion = AgentSuggestion(
                 id=str(uuid4()),
                 user_id=request.user_id,
                 gesture_pattern_id=pattern.id,
-                suggested_intent=winning_intent,
+                suggested_intent=evidence.intent,
                 reason=reason,
-                confidence=confidence,
+                confidence=evidence.confidence,
                 status="PENDING",
             )
             db.add(suggestion)
         else:
-            suggestion.suggested_intent = winning_intent
+            suggestion.suggested_intent = evidence.intent
             suggestion.reason = reason
-            suggestion.confidence = confidence
+            suggestion.confidence = evidence.confidence
 
     db.commit()
     return action, pattern, suggestion

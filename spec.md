@@ -1,98 +1,63 @@
 # SPEC — SilentOrchestra 2.0
 
-## 개요
-
-반복 행동과 맥락에서 개인의 몸짓과 행동의 연관을 학습하는 로컬 우선 Spatial AI Agent. 흐름은 `Observation → Pattern → Suggestion → Memory → Execution → Feedback`이며, 기억의 키는 `user + gesture_key + context_scope = intent`다. 제스처 자체는 명령이 아니다. ‘몸짓 언어’는 제품 방향이며, 현재 구현은 제한된 동작과 이산 행동의 개인화다. 연속량·시퀀스·문법은 지원하지 않는다.
-
-이 문서는 구현의 규범이며 충돌 시 우선한다. 배경은 [brief](docs/brief.md), 용어·FR ID는 [Notion WAVE:ON](https://ken-jeong.notion.site/wave-on)과 맞춘다.
+반복 행동과 맥락에서 `user + gesture_key + context_scope → intent`를 학습하는 로컬 우선 Agent입니다. 흐름은 `Observation → Pattern → Suggestion → Memory → Execution → Feedback`입니다. 이 문서가 구현 규범이며 충돌 시 우선합니다.
 
 ## 범위
 
-- 포함: `presentation`·`music`, UI 제스처 `swipe:right`·`swipe:left`·`open_palm`·`circle`, 반복 학습·제안·승인·실행·피드백. 인코더는 `pinch`·`hold`도 지원한다.
-- FR-01~FR-15는 필수, FR-16(데모 초기화)·FR-17(OpenCV Optical Flow 웹캠 입력)은 선택이다.
-- 제외: 공간 자동 인식, IoT 실기기, 얼굴·생체 인식, 클라우드 영상, LLM 자유 형식 Intent, 인증·결제·다중 사용자 동기화, 완전한 수어 인식.
-- 학습·실행 Intent는 맥락별 [CONTEXT_INTENTS](backend/src/silent_orchestra/services/action_catalog.py)로 제한한다. 맥락 추가 시 카탈로그와 `contexts.activity`·`gesture_patterns.context_scope` CHECK 제약을 함께 변경한다.
+- 활동: `presentation`, `music`
+- UI/웹캠 몸짓: `swipe:right`, `swipe:left`, `open_palm:none`, `circle:clockwise`
+- 선택 기능: 데모 초기화(FR-16), OpenCV 웹캠(FR-17)
+- 제외: 공간 자동 인식, IoT, 얼굴·생체 인식, 영상 업로드, 자유 형식 LLM Intent, 인증·결제·동기화, 연속 문법
+- Intent는 [action_catalog.py](backend/src/silent_orchestra/services/action_catalog.py)의 맥락별 카탈로그로 제한합니다.
 
-## 요구사항
+## 입력·개인정보 (FR-01, 03, 14, 17)
 
-`gesture_key`는 `motion_type:direction`, 학습 맥락은 `activity = context_scope`다. Pattern은 같은 사용자·몸짓·맥락의 반복 행동 연관, Memory는 승인된 `ACTIVE` 패턴, confidence는 0~1 신뢰도다.
+- P-1: 원본 프레임을 저장·전송하지 않으며 `frame_stored=0`을 DB CHECK로 강제합니다.
+- P-2: API는 미정의 필드를 거부하고 이미지 필드를 제공하지 않습니다.
+- P-3: 저장 데이터는 모션·방향·시간·속도·진폭 embedding, 맥락, 행동입니다. 얼굴 특징·궤적·키 문자열은 저장하지 않습니다.
+- P-4: 카메라 프레임은 메모리에서만 처리합니다.
 
-### 입력·개인정보 (FR-01, FR-03, FR-14, FR-17)
+## 맥락·학습 (FR-02, 04, 05, 07)
 
-| ID | 규칙 |
-|---|---|
-| P-1 | 원본 프레임을 DB·파일·네트워크에 저장하지 않는다. `gesture_observations.frame_stored`는 CHECK로 항상 `0`이다. |
-| P-2 | 요청은 미정의 필드를 거부한다(`extra="forbid"`). 이미지·프레임을 전송할 필드는 없다. |
-| P-3 | 얼굴·신원 특징을 저장하지 않는다. 저장 대상은 motion_type, direction, 실측 duration_ms, 속도·진폭을 포함한 embedding, context, 후속 행동뿐이다. 속도는 ROI 너비/초, 진폭은 ROI 너비 단위이며 원본 궤적·키 입력 문자열은 저장하지 않는다. |
-| P-4 | 웹캠 프레임은 메모리에서만 사용하고 디스크에 쓰지 않는다. |
+- L-1~2: `/teach`는 관찰과 허용된 사용자 행동을 1:1로 연결합니다. 중복·금지 행동은 400입니다.
+- L-3: 같은 사용자·몸짓·활동의 최근 30일, 최대 20건을 `0.5^(경과일/반감기)`로 가중해 승자를 정합니다. count는 원시 건수, target은 최빈값(동률은 최신), embedding은 승자 관찰 평균입니다.
+- L-4: `confidence = min(0.99, (0.35 + 0.10×min(승자횟수,5) + 0.22×승자횟수/전체횟수) × recency_factor)`. 기본 반감기는 10일입니다.
+- L-5~6: 1·2위 가중합이 상대 오차 1e-6 이내이거나 승자가 바뀌면 기존 기억을 강등합니다. 승자 3회 이상·비동률·비활성일 때만 패턴당 `PENDING` 제안 하나를 만듭니다.
+- L-7: `(user_id, gesture_key, context_scope, intent)`는 유일합니다.
+- L-8: activity가 없으면 active app 또는 로컬 활성 창으로 판정합니다. 미지원·모호한 앱은 거부하며 명시 activity는 시뮬레이션 override입니다. space·device는 추론하지 않는 스냅샷입니다.
+- L-9: Windows 관측 모드는 몸짓 후 5초 안의 같은 앱 첫 허용 키만 연결합니다. 합성·반복·만료 입력은 제외합니다.
+- L-10: `open_palm:none`은 승인/정답, `circle:clockwise`는 거절/오답 확인 몸짓이며 학습 후보가 아닙니다.
 
-### 맥락·학습 (FR-02, FR-04, FR-05, FR-07)
+## 승인·기억 (FR-08, 09)
 
-| ID | 규칙 |
-|---|---|
-| L-1 | `POST /teach`는 관찰과 후속 행동을 1:1로 연결한다. 이미 연결된 관찰은 400이다. |
-| L-2 | `action_type`이 맥락 카탈로그 밖이면 400이며 데이터를 생성하지 않는다. |
-| L-3 | 같은 `user + gesture_key + activity`에서 최근 30일 이내 최대 20건의 사용자 후속 행동을 각 행동의 `0.5 ^ (경과일수 / recency_half_life_days)` 가중치로 합산해, 가중합이 가장 큰 행동 1개를 승자로 고른다(구조 감사 C-2 잔여분: raw count만 쓰면 30일 창 초반에 쌓인 오래된 다수가 최근의 새 습관을 계속 이긴다). `observation_count`·L-4의 승자횟수는 raw count다. target은 승자 행동의 최빈값이며 동률이면 가장 최근 값을 사용한다. 패턴 embedding은 이 창 안의 승자 행동 관찰만으로 다시 평균한다. |
-| L-4 | confidence = `min(0.99, (0.35 + 0.10 × min(승자횟수, 5) + 0.22 × 승자횟수/전체횟수) × recency_factor)`. `recency_factor`는 승자 행동들의 `0.5 ^ (경과일수 / recency_half_life_days)`(기본 반감기 10일) 평균이며, 방금 쌓인 증거는 1에 가깝고 30일 창 끝에 걸친 오래된 증거는 값이 줄어든다. |
-| L-5 | L-3의 가중합이 1위·2위 사이에 사실상 동률(상대 오차 1e-6 이내)이면 해당 gesture+context의 모든 `ACTIVE` 기억을, 승자가 바뀌면 기존 승자의 `ACTIVE` 기억을 `CANDIDATE`로 강등하고 `auto_execute`를 끈다. 현재 승자가 아니거나 임계 건수에 못 미치는 대기 제안은 삭제한다. |
-| L-6 | 승자 횟수 ≥ `suggestion_threshold`(기본 3), 동률 아님, 패턴이 `ACTIVE` 아님일 때만 `PENDING` 제안을 만든다. 패턴당 대기 제안은 최대 1개다. |
-| L-7 | `(user_id, gesture_key, context_scope, intent)`는 유일하다. |
-| L-8 | activity 생략 시 `active_app`으로 presentation/music을 판정한다. 앱도 생략하면 로컬 `active_window()`를 읽는다. 미지원·모호한 앱은 추측하지 않고 관찰을 거부한다. 명시 activity는 Simulation/수동 override다. space·device는 스냅샷 메타데이터이며 추론 신호가 아니다. |
-| L-9 | Windows 웹캠 관측 모드는 지원 앱에 전달되는 실제 탐색/미디어 키만 수동 입력으로 관측한다. 관찰 후 5초 이내, 동일 앱·맥락의 첫 조작만 연결하며 합성 키·자동 실행된 관찰·만료된 관찰은 제외한다. 학습 모드는 추론을 끄고 승인 후에도 기존 조작을 관측할 수 있다. 다른 플랫폼과 로컬 N/B/Space 입력은 명시적인 라벨 시뮬레이션이다. |
-| L-10 | `open_palm:none`·`circle:clockwise`는 어떤 `CONTEXT_INTENTS`에도 속하지 않는 예약된 확인 몸짓이다. 관찰되면 새 후보로 학습되지 않고, M-2/F-1의 승인·피드백 응답을 손 대신 대신한다([confirmation.py](backend/src/silent_orchestra/services/confirmation.py)). |
+- M-1: 승인 전 자동 실행하지 않습니다. `ACTIVE + auto_execute=true`만 실행 후보입니다.
+- M-2~3: `PENDING`만 1회 응답할 수 있습니다. 수정 Intent는 필수·허용·비중복이어야 합니다.
+- M-4: 승인 시 임계 confidence를 보장하고 같은 몸짓·맥락의 다른 활성 기억을 강등합니다.
+- M-5: 거절 시 confidence를 0.20 낮추며, 같은 Intent는 새 증거 3건 전까지 재제안하지 않습니다.
+- M-6: `/memories`는 임계값 이상의 활성 기억만 반환합니다.
 
-관찰마다 Context 스냅샷 1행을 생성한다. 테이블·컬럼·제약 원본은 [ERD](docs/erd.md)와 [schema.sql](backend/sql/schema.sql), 요청·응답 스키마는 실행 서버의 `/docs`다.
+## 추론·실행 (FR-06, 10, 11)
 
-### 승인·기억 (FR-08, FR-09)
+- I-1~3: 같은 사용자·맥락의 활성 기억을 `confidence × (0.20×키 일치 + 0.80×max(코사인 유사도,0))`로 평가합니다. 유사도 0.85 미만, 상위 다른 Intent 점수 차 0.08 미만, 최종 점수 0.60 미만이면 실행하지 않습니다. 6차원 시뮬레이션과 11차원 실측 embedding은 서로 매칭하지 않습니다.
+- I-3a: 볼륨·줌 Intent만 `1 + min(int(amplitude),4)`회 실행합니다. 나머지는 1회입니다.
+- I-4~7: 모든 실행은 실제 반복 횟수와 `SIMULATED`·`SUCCEEDED`·`FAILED` 결과를 기록합니다. 기본은 `DRY_RUN`; OS 실행은 명시적으로 켜며 활성 창 불일치·미매핑·전송 실패를 `FAILED`로 기록합니다.
 
-| ID | 규칙 |
-|---|---|
-| M-1 | 승인 전 자동 실행은 0회다. `ACTIVE` + `auto_execute=true` 기억만 실행 후보가 된다. |
-| M-2 | `PENDING`만 `ACCEPTED`·`MODIFIED`·`REJECTED`로 응답할 수 있고 재전이는 없다. |
-| M-3 | `MODIFIED`에는 `modified_intent`가 필수다. 맥락 카탈로그 안이어야 하며 같은 gesture+context의 다른 기억과 중복될 수 없다. |
-| M-4 | 승인 시 confidence를 `auto_execution_threshold` 이상으로 올리고, 같은 gesture+context의 다른 `ACTIVE` 기억은 모두 `CANDIDATE`로 강등한다. 자동 실행 기억은 조합당 최대 1개다. |
-| M-5 | 거절 시 `REJECTED`, `auto_execute=false`, confidence −0.20. 같은 intent는 거절 후 새 사용자 행동이 suggestion_threshold회 쌓여야 `CANDIDATE`로 복귀하고 재제안할 수 있다. 기존 표만으로는 재제안하지 않는다. |
-| M-6 | `GET /memories`는 `ACTIVE`이며 confidence ≥ `auto_execution_threshold`인 기억만 반환한다. |
+## 피드백 (FR-12, 13)
 
-### 추론·실행 (FR-06, FR-10, FR-11)
+- F-1: 실행당 피드백은 한 건입니다.
+- F-2: confidence 변화는 `CORRECT +0.03`, `WRONG_ACTION -0.15`, `IGNORE -0.05`이며 0~0.99로 제한합니다. `ACCIDENTAL_GESTURE`는 confidence를 바꾸지 않고 같은 맥락에서 유사도 0.95 이상인 모션을 5분간 억제합니다.
+- F-3~4: 잘못된 행동은 허용된 Intent로 교정할 수 있습니다. confidence가 임계값 아래면 기억을 강등합니다.
 
-| ID | 규칙 |
-|---|---|
-| I-1 | M-1의 후보 중 같은 사용자·`context_scope`만 추론한다. |
-| I-2 | 점수 = `pattern.confidence × (0.20 × gesture_key 일치 + 0.80 × max(코사인 유사도, 0))`. 유사도 0.85 미만은 제외하며 서로 다른 Intent의 상위 점수 차이가 0.08 미만이면 실행하지 않는다. 실측 속도·진폭은 함께 제공해야 하며, 기존 6차원과 실측 11차원 embedding은 서로 매칭하지 않고 해당 입력으로 재학습한다. |
-| I-3 | 점수 < `auto_execution_threshold`(기본 0.60)면 실행하지 않고 사유를 반환한다. |
-| I-3a | `VOLUME_UP`·`VOLUME_DOWN`·`ZOOM_IN`·`ZOOM_OUT`(`SCALABLE_INTENTS`)만 실측 `amplitude`로 크기를 갖는다. `magnitude = 1 + min(int(amplitude), 4)`회 키를 반복하며 1~5로 제한한다. 실측값이 없거나(시뮬레이션) 다른 Intent는 항상 1회다. |
-| I-4 | 모든 실행은 성공·실패와 무관하게 `executions`에 `SIMULATED`·`SUCCEEDED`·`FAILED`로 기록하며, `parameters.magnitude`에 실제 반복 횟수를 남긴다. |
-| I-5 | 기본은 OS 제어 없이 결과만 표시하는 `DRY_RUN`. `SO_ENABLE_OS_ACTIONS=true`일 때만 실제 키를 보낸다. |
-| I-6 | `SO_REQUIRE_ACTIVE_WINDOW=true`(기본)면 대상 앱 활성 여부를 확인한다. 비활성·확인 불가 시 키를 보내지 않고 `FAILED`와 사유를 UI에 표시한다. |
-| I-7 | 미매핑 Intent는 키를 보내지 않고 `FAILED`로 기록한다. |
+## 데모·UI (FR-15, 16)
 
-### 피드백 (FR-12, FR-13)
-
-| ID | 규칙 |
-|---|---|
-| F-1 | 실행당 피드백은 1건이며 중복은 400이다. |
-| F-2 | 매핑 confidence 증감은 `CORRECT` +0.03, `WRONG_ACTION` −0.15, `IGNORE` −0.05이며 0~0.99로 제한한다. `ACCIDENTAL_GESTURE`는 별도 감지 오류로 기록하고 매핑 confidence·부정 카운트를 낮추지 않는다. 해당 사용자·맥락의 유사 모션(유사도 ≥ 0.95)은 5분간 실행을 억제한다. 이는 감지 모델 학습이 아닌 임시 보호다. |
-| F-3 | `WRONG_ACTION` + `corrected_intent`는 M-3 검증 후 기억의 Intent를 교정한다. |
-| F-4 | confidence < `auto_execution_threshold`면 `auto_execute=false`, `CANDIDATE`로 강등한다. |
-
-### 데모·UI (FR-15, FR-16)
-
-| ID | 규칙 |
-|---|---|
-| D-1 | `POST /demo/reset`의 demo-user 삭제·재생성은 단일 트랜잭션이며 실패 시 이전 상태로 롤백한다. |
-| D-2 | 종속 데이터는 `ON DELETE CASCADE`로 삭제하며 초기화 후 0건이고 재학습 가능해야 한다. |
-| D-3 | `SO_DEMO_MODE=false`면 초기화는 403이며 데이터를 변경하지 않는다(기본 true). |
-| U-1 | 사용자가 명시적으로 시작한 경우에만 웹 UI에 로컬 카메라 미리보기를 표시할 수 있다. 미리보기 프레임은 브라우저 메모리에서만 몸짓 분석에 쓰고, 서버·DB·파일·분석 서비스로 전송하거나 저장하지 않으며 중지·페이지 종료 시 해제한다. Agent Orb·상태 텍스트는 미리보기와 함께 인식 상태를 전달한다. |
-| U-2 | 명령 매핑 설정보다 AI가 배운 기억을 앞세우며 Gesture·Context·Intent·confidence를 표시한다. |
-| U-3 | 실행 오버레이는 사용자를 막지 않으며 실패를 성공과 구분해 사유를 표시한다. |
-
-UI는 Idle(공간 이해 대기), Listening(모션·Context 분석), Observation ready(후속 행동 선택), Learning progress(1/3→2/3→3/3), Suggestion pending(승인·거절), Execution overlay(Intent·confidence), Feedback(맞아요·아니에요)을 표현한다. 외부 입력의 상태 변화도 주기적으로 자동 갱신한다.
+- D-1~3: `/demo/reset`은 demo-user만 단일 트랜잭션으로 초기화하고 Context·Observation·Action·Pattern·Suggestion·Execution·Feedback 삭제 건수를 반환합니다. 다른 사용자는 보존하고 실패는 롤백하며 데모 모드가 아니면 403입니다.
+- U-1: 카메라는 사용자가 시작하고 중지·페이지 종료 시 해제합니다.
+- U-2~3: UI는 학습된 기억과 confidence를 우선 표시하고 실행 실패 사유를 구분합니다.
 
 ## 완료 기준
 
-- P-1~P-4, M-1, I-6 충족; 맥락 분기 데모 시나리오 100% 통과; D-1~D-3 초기화·재학습 통과.
-- 핵심 테스트와 SQL 계약 검증 전부 통과.
-- 핵심 루프 데모 90초 이내, 발표 대본 3분 이내.
+- 개인정보, 승인 전 실행 금지, 활성 창 차단, 맥락 분기, 초기화·재학습 계약 통과
+- 백엔드·프런트·SQL 검증 통과
+- 핵심 데모 90초, 발표 3분 이내
 
-FR-16 Reset 응답은 기존 bootstrap 상태 필드에 deleted_counts를 추가한다. demo-user에 속한 contexts, gesture_observations, actions, gesture_patterns, agent_suggestions, executions, feedback의 삭제 건수를 반환하며 다른 사용자는 보존한다.
+테이블·제약은 [ERD](docs/erd.md)와 [schema.sql](backend/sql/schema.sql), API 스키마는 실행 서버의 `/docs`가 소유합니다.
